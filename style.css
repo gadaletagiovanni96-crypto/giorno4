@@ -6,12 +6,18 @@
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
+html, body {
+    height: 100%; /* Questo dice al telefono di calcolare l'altezza reale senza tagliare nulla */
+}
+
 body {
     background-color: #1a1e24; /* Colore scuro riflessivo */
     color: #f0f4f8;
-    overflow: hidden; /* Evita lo scroll dell'intera pagina */
-    height: 100vh;
-    width: 100vw;
+    overflow: hidden; /* Evita lo scroll dell'intera pagina, facciamo scorrere solo le slide */
+    width: 100%;
+    /* Altezza dinamica: il trucco definitivo per gli smartphone moderni */
+    height: 100vh; 
+    height: 100dvh; 
     display: flex;
     flex-direction: column;
 }
@@ -106,6 +112,7 @@ body {
 /* Controlli in basso (Frecce) */
 .controls {
     height: 70px;
+    flex-shrink: 0; /* <-- AGGIUNGI QUESTA RIGA: Impedisce ai pulsanti di rimpicciolirsi o sparire */
     background-color: #111418;
     display: flex;
     justify-content: space-between;
