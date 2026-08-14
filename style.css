@@ -1,0 +1,237 @@
+/* Reset base e impostazioni generali */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+    background-color: #1a1e24; /* Colore scuro riflessivo */
+    color: #f0f4f8;
+    overflow: hidden; /* Evita lo scroll dell'intera pagina */
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Contenitore principale delle slide */
+.slider-container {
+    flex-grow: 1;
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* Singola slide */
+.slide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    /* Niente allineamenti forzati qui, farà tutto il margin! */
+    padding: 20px 20px 90px 20px; /* Ho aggiunto un po' di spazio in basso per non coprire le frecce */
+    opacity: 0;
+    transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+    transform: translateX(100%);
+    overflow-y: auto; /* Rende la pagina scorrevole */
+}
+
+/* Stato attivo della slide */
+.slide.active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Slide precedenti e successive (per animazione) */
+.slide.prev {
+    transform: translateX(-100%);
+}
+
+/* Contenitore del contenuto centrale */
+.content {
+    background-color: #242933;
+    padding: 30px 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    margin: auto; /* <-- IL TRUCCO: centra in automatico se c'è spazio, altrimenti parte dall'alto! */
+}
+
+.content h1, .content h2 {
+    color: #e2e8f0;
+    margin-bottom: 15px;
+    font-weight: 300;
+}
+
+.content p {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    color: #cbd5e1;
+}
+
+.responsive-img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    display: block;
+}
+/* Contenitore per Google Drive iframe */
+.drive-container {
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* Proporzione 16:9 */
+    height: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.drive-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* Controlli in basso (Frecce) */
+.controls {
+    height: 70px;
+    background-color: #111418;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.nav-btn {
+    background: none;
+    border: none;
+    color: #60a5fa; /* Azzurro per indicare interattività */
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 10px;
+}
+
+.nav-btn:disabled {
+    color: #475569;
+    cursor: not-allowed;
+}
+
+/* Pallini indicatori (dots) */
+.dots-container {
+    display: flex;
+    gap: 8px;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    background-color: #475569;
+    border-radius: 50%;
+    transition: background-color 0.3s;
+}
+
+.dot.active {
+    background-color: #60a5fa;
+}
+
+.testo-giallo {
+    color: #facc15 !important; /* Un giallo oro che spicca sul buio */
+}
+
+.testo-azzurro {
+    color: #38bdf8 !important; /* Un azzurro luminoso */
+}
+
+.testo-verde {
+    color: #4ade80 !important; /* Un verde speranza */
+}
+
+.testo-rosso {
+    color: #ff6b6b !important;
+}
+
+.testo-indentato-corsivo {
+    font-style: italic;
+    margin-left: 25px; /* Sposta il testo a destra */
+}
+
+/* Stile per le aree di testo dove scrivono i ragazzi */
+.input-riflessione {
+    width: 100%;
+    min-height: 120px;
+    background-color: #111418; /* Sfondo scuro che si integra col sito */
+    color: #f0f4f8; /* Testo chiaro */
+    border: 1px solid #475569;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+    font-size: 16px;
+    font-family: inherit;
+    resize: none; /* Impedisce di sformare il layout */
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.input-riflessione:focus {
+    outline: none;
+    border-color: #60a5fa; /* Bordo azzurro quando iniziano a scrivere */
+    box-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
+}
+
+/* Stile per il bottone del PDF */
+.btn-pdf {
+    background-color: #4ade80; /* Verde per indicare azione positiva e completata */
+    color: #1a1e24;
+    border: none;
+    padding: 15px;
+    width: 100%;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-pdf:active {
+    background-color: #22c55e;
+}
+
+/* Stile per il lettore audio nativo */
+.audio-container {
+    width: 100%;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.custom-audio {
+    width: 100%;
+    border-radius: 30px; /* Rende i bordi arrotondati e moderni */
+    outline: none;
+}
+
+/* Stile per il lettore video nativo */
+.video-container {
+    width: 100%;
+    margin: 20px 0;
+    border-radius: 8px; /* Arrotonda il contenitore */
+    overflow: hidden; /* Taglia via gli spigoli del video se escono */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5); /* Aggiunge una leggera ombra elegante */
+}
+
+.custom-video {
+    width: 100%;
+    height: auto; /* Mantiene le proporzioni corrette */
+    display: block; /* Toglie lo spazio bianco fastidioso sotto il video */
+    background-color: #000; /* Sfondo nero di caricamento */
+}

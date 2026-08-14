@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Attività - La Luce nel Buio</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- LIBRERIA PER GENERARE IL PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+    <div class="slider-container">
+        
+        <!-- SLIDE 1: Titolo e Testo Introduttivo -->
+        <div class="slide">
+            <div class="content">
+                <h1 class="testo-giallo">Prima di Iniziare</h1>
+                <p class="testo-verde">Leggi attentamente le istruzioni.</p>
+                <p>Ti chiediamo di prenderti un po' di tempo per te stesso, per pensare alla tua vita. Puoi decidere di allontanarti un po' dal gruppo in modo da poter riflettere al meglio</p>
+                <p>Quando sei pronto puoi cliccare il pulsante <span class="testo-azzurro">"Avanti"</span> in basso</p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h1 class="testo-giallo">Prima di Iniziare</h1>
+                <p class="testo-verde">I pulsanti in basso ti permetteranno di andare avanti e indietro nelle slide che guideranno la riflessione.</p>
+                <p>Per questa attività noi educatori ci siamo completamente affidati al vostro <span class="testo-rosso">senso di responsabilità</span>, non deludeteci e usate il cellulare consapevolmente!</p>
+                <p>Clicca <span class="testo-azzurro">"Avanti"</span> per iniziare l'attività.</p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h1 class="testo-giallo">Buon Lavoro!</h1>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">L'illusione della perfezione</h2>
+                <p>Sui social, a scuola, nello sport... ci viene chiesto di essere sempre vincenti. Facciamo finta che vada tutto bene, anche quando dentro crolliamo.</p>
+                <p class="testo-rosso">Ti sei mai sentito costretto a indossare questa maschera? <span style="font-weight: bold;">Ti sei mai sentito crollare?</span></p>
+                
+                <!-- AREA DI TESTO 1 -->
+                <textarea id="riflessione1" class="input-riflessione" placeholder="Tocca qui per scrivere i tuoi pensieri..."></textarea>
+            </div>
+        </div>
+
+        <!-- SLIDE 2: Template con Testo e Immagine -->
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Michael Jordan</h2>
+                <!-- Sostituisci il link src con il percorso della tua immagine -->
+                <img src="assets/jordan.jpg" alt="Immagine di riflessione" class="responsive-img">
+                <p class="testo-indentato-corsivo">"Avrò segnato 11 volte canestri vincenti sulla sirena, e altre 17 volte a meno di dieci secondi dalla fine, ma nella mia carriera ho sbagliato più di 9000 tiri.
+Ho perso quasi 300 partite. 26 volte i miei compagni mi hanno affidato il tiro decisivo e l'ho sbagliato."</p>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Guarda con attenzione</h2>
+                <p>Prenditi un momento per guardare questo video. Fai attenzione ai dettagli e a ciò che ti suscita.</p>
+                
+                <!-- Contenitore del Video -->
+                <div class="video-container">
+                    <video controls class="custom-video">
+                        <!-- Inserisci qui il nome del tuo file video (es. video.mp4) e mettilo nella cartella assets -->
+                        <source src="assets/video.mp4" type="video/mp4">
+                        Il tuo browser non supporta la riproduzione del video.
+                    </video>
+                </div>
+                
+                <p class="testo-azzurro" style="margin-top: 15px; font-weight: bold;">Cosa ti ha colpito di più?</p>
+                <textarea id="riflessione5" class="input-riflessione" placeholder="Scrivi qui, è solo per te..."></textarea>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Le crepe e la luce</h2>
+                <p>Se persino i "giganti" cadono e sbagliano continuamente, <span class="testo-rosso">perché noi non ci perdoniamo mai le nostre sconfitte? Perché ci fanno così paura?</span></p>
+                <textarea id="riflessione2" class="input-riflessione" placeholder="Tocca qui per scrivere i tuoi pensieri..."></textarea>
+            </div>
+        </div>
+
+        <!-- SLIDE 3: Template con Audio/Video da Google Drive -->
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">🎧Indossa le cuffie e... ascolta</h2>
+                <p>Premi play per ascoltare la canzone.</p>
+                <!-- Iframe per Google Drive -->
+                <div class="audio-container">
+                    <audio controls class="custom-audio">
+                        <!-- Ora punta direttamente alla tua cartella assets -->
+                        <source src="assets/canzone.mp3" type="audio/mp3">
+                        Il tuo browser non supporta l'ascolto dell'audio.
+                    </audio>
+                </div>
+
+                <!-- RIQUADRO CON IL TESTO DELLA CANZONE -->
+<div class="testo-canzone">
+    <p>⚽LA LEVA CALCISTICA DEL '68</p>
+    Sole sul tetto<br>
+    Dei palazzi in costruzione<br>
+    Sole che batte sul campo di pallone<br>
+    E terra e polvere che tira vento<br>
+    E poi magari piove<br>
+    Nino cammina che sembra un uomo<br>
+    Con le scarpette di gomma dura<br>
+    Dodici anni<br>
+    E il cuore pieno di paura<br><br>
+
+    Ma, Nino, non aver paura<br>
+    Di sbagliare un calcio di rigore<br>
+    Non è mica da questi particolari<br>
+    Che si giudica un giocatore<br>
+    Un giocatore lo vedi dal coraggio<br>
+    Dall'altruismo e dalla fantasia<br><br>
+    
+    E chissà quanti ne hai visti <br>
+E quanti ne vedrai <br>
+Di giocatori tristi che non hanno vinto mai <br>
+Ed hanno appeso le scarpe <br>
+A qualche tipo di muro <br>
+E adesso ridono dentro a un bar <br>
+E sono innamorati da dieci anni <br>
+Con una donna che non hanno amato mai <br>
+Chissà quanti ne hai veduti <br>
+Chissà quanti ne vedrai <br><br>
+
+Nino capì fin dal primo momento <br>
+L'allenatore sembrava contento <br>
+E allora mise il cuore dentro alle scarpe <br>
+E corse più veloce del vento <br>
+Prese un pallone che sembrava stregato <br>
+Accanto al piede rimaneva incollato <br>
+Entrò nell'area, tirò senza guardare <br>
+Ed il portiere lo fece passare <br><br>
+
+Ma, Nino, non aver paura <br>
+Di tirare un calcio di rigore <br>
+Non è mica da questi particolari <br>
+Che si giudica un giocatore <br>
+Un giocatore lo vedi dal coraggio <br>
+Dall'altruismo e dalla fantasia <br><br>
+
+Il ragazzo si farà <br>
+Anche se ha le spalle strette <br>
+Quest'altro anno giocherà <br>
+Con la maglia numero sette <br>
+
+</div>
+            </div>
+        </div>
+
+        <!-- SLIDE 4: Conclusione Fase 1 -->
+        
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Riflessione</h2>
+                <p>Se vuoi puoi usare questo spazio per scrivere delle tue riflessioni sulla canzone che hai appena ascoltato.</p>
+                
+                <!-- AREA DI TESTO 2 -->
+                <textarea id="riflessione3" class="input-riflessione" placeholder="Scrivi qui, è solo per te..."></textarea>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">E tu?</h2>
+                <p>Ora pensa alla tua vita. Pensa a un momento in cui hai sentito il peso del fallimento, quel momento in cui hai pensato: "Non valgo niente".</p>
+                
+                <!-- AREA DI TESTO 2 -->
+                <textarea id="riflessione4" class="input-riflessione" placeholder="Scrivi qui, è solo per te..."></textarea>
+            </div>
+        </div>
+
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Ora tocca a te</h2>
+                <p>Prendi il foglio che ti è stato consegnato e scrivi un fallimento che hai provato nella tua vita.</p>
+                <p>Inseriscilo nella busta e disegna un piccolo simbolo per poterla riconoscere in seguito.</p>
+            </div>
+        </div>
+
+        <!-- SLIDE 6: L'Azione e IL TASTO PDF -->
+        <div class="slide">
+            <div class="content">
+                <h2 class="testo-giallo">Salva le tue riflessioni</h2>
+                
+                <div style="margin-top: 25px; padding: 15px; border: 1px solid #4ade80; border-radius: 8px;">
+                    <p style="color: #4ade80; margin-bottom: 15px;">Hai completato questa fase. Puoi salvare ciò che hai scritto sul telefono per portarlo a casa con te.</p>
+                    
+                    <!-- BOTTONE PER SCARICARE IL PDF -->
+                    <button id="downloadPdfBtn" class="btn-pdf">Salva i miei pensieri in PDF</button>
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+
+    <!-- Controlli di navigazione (Frecce) -->
+    <div class="controls">
+        <button id="prevBtn" class="nav-btn">&#10094; Indietro</button>
+        <div class="dots-container" id="dotsContainer"></div>
+        <button id="nextBtn" class="nav-btn">Avanti &#10095;</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
