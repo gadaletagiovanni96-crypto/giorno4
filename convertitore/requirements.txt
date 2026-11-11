@@ -1,3 +1,4 @@
 pillow
 pillow-heif
 imageio-ffmpeg
+questionary

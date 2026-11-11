@@ -1,0 +1,449 @@
+#!/usr/bin/env python3
+"""Convertitore di foto e video con tre strumenti:
+
+  1. iPhone        foto HEIC -> JPG e video HEVC -> MP4
+  2. Foto -> JPG   qualsiasi foto (PNG, WEBP, HEIC, TIFF, BMP, GIF, AVIF...) in JPG
+  3. Video -> MP4  qualsiasi video (MOV, AVI, MKV, WMV, WEBM...) in MP4
+
+Uso:
+    python converti.py                         (menu con le frecce)
+    python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video [opzioni]
+"""
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    from pillow_heif import register_heif_opener
+    import imageio_ffmpeg
+except ImportError:
+    sys.exit("Librerie mancanti. Esegui prima:  py -m pip install -r requirements.txt")
+
+register_heif_opener()
+
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+
+# ---------------------------------------------------------------- formati
+
+EST_FOTO_IPHONE = {".heic", ".heif"}
+EST_VIDEO_IPHONE = {".mov", ".mp4", ".m4v", ".mkv", ".hevc", ".h265", ".265"}
+
+EST_FOTO_TUTTE = {".heic", ".heif", ".png", ".webp", ".bmp", ".tif", ".tiff",
+                  ".gif", ".avif", ".jfif", ".ico", ".tga", ".psd", ".jp2",
+                  ".ppm", ".pgm", ".pbm", ".pcx", ".dib"}
+EST_VIDEO_TUTTE = {".mov", ".mp4", ".m4v", ".mkv", ".avi", ".wmv", ".webm",
+                   ".flv", ".f4v", ".3gp", ".3g2", ".mpg", ".mpeg", ".m2v",
+                   ".ts", ".mts", ".m2ts", ".vob", ".ogv", ".asf", ".divx",
+                   ".hevc", ".h265", ".265", ".h264", ".264"}
+
+QUALITA_VIDEO = {"alta": 18, "media": 23, "bassa": 28}  # più basso = migliore
+
+STRUMENTI = {
+    "iphone": "iPhone: foto HEIC -> JPG e video HEVC -> MP4",
+    "foto": "Qualsiasi foto -> JPG",
+    "video": "Qualsiasi video -> MP4",
+}
+
+
+# ---------------------------------------------------------------- foto
+
+def converti_foto(sorgente: Path, destinazione: Path, qualita: int) -> None:
+    with Image.open(sorgente) as originale:
+        originale.seek(0)  # GIF animate / TIFF multipagina: primo fotogramma
+        img = ImageOps.exif_transpose(originale)  # raddrizza la foto
+        exif = img.info.get("exif")  # dati EXIF con l'orientamento già corretto
+
+        if img.mode.startswith("I"):  # immagini a 16 bit
+            img = img.point(lambda v: v / 256).convert("L")
+        if img.mode in ("RGBA", "LA", "PA") or (
+                img.mode == "P" and "transparency" in img.info):
+            # il JPG non ha trasparenza: metto uno sfondo bianco
+            img = img.convert("RGBA")
+            sfondo = Image.new("RGB", img.size, (255, 255, 255))
+            sfondo.paste(img, mask=img.getchannel("A"))
+            img = sfondo
+        else:
+            img = img.convert("RGB")
+
+        opzioni = {"quality": qualita}
+        if exif:
+            opzioni["exif"] = exif
+        destinazione.parent.mkdir(parents=True, exist_ok=True)
+        img.save(destinazione, "JPEG", **opzioni)
+
+
+# ---------------------------------------------------------------- video
+
+def filtro_hdr(trasferimento: str) -> str:
+    """Converte i colori HDR in colori normali (altrimenti il video è sbiadito)."""
+    return (f"zscale=tin={trasferimento}:pin=bt2020:min=bt2020nc:t=linear:npl=100,"
+            "format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
+
+
+def info_video(file: Path) -> dict:
+    """Legge codec video, codec audio e tipo di HDR del file."""
+    r = subprocess.run([FFMPEG, "-hide_banner", "-i", str(file)],
+                       capture_output=True, text=True, errors="replace")
+    info = {"video": None, "audio": None, "hdr": None}
+    v = re.search(r"Stream #.*?Video: (.*)", r.stderr)
+    a = re.search(r"Stream #.*?Audio: (\w+)", r.stderr)
+    if a:
+        info["audio"] = a.group(1)
+    if v:
+        testo = v.group(1)
+        info["video"] = testo.split()[0].strip(",")
+        if "arib-std-b67" in testo:      # HLG: quello dei video iPhone
+            info["hdr"] = "arib-std-b67"
+        elif "smpte2084" in testo:       # PQ / HDR10
+            info["hdr"] = "smpte2084"
+        elif "bt2020" in testo:
+            info["hdr"] = "arib-std-b67"
+    return info
+
+
+def converti_video(sorgente: Path, destinazione: Path, crf: int, info: dict,
+                   copia_se_possibile: bool) -> None:
+    destinazione.parent.mkdir(parents=True, exist_ok=True)
+    temporaneo = destinazione.with_name(destinazione.stem + ".parziale.mp4")
+
+    def esegui(copia_video: bool, con_hdr: bool, silenzioso: bool) -> int:
+        cmd = [FFMPEG, "-hide_banner", "-loglevel", "quiet" if silenzioso else "error",
+               "-stats", "-y", "-i", str(sorgente),
+               "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "0"]
+        if copia_video:
+            cmd += ["-c:v", "copy"]
+        else:
+            if con_hdr:
+                cmd += ["-vf", filtro_hdr(info["hdr"])]
+            cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
+                    "-pix_fmt", "yuv420p"]
+        if copia_video and info["audio"] in ("aac", "mp3"):
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", "192k"]
+        cmd += ["-movflags", "+faststart", str(temporaneo)]
+        return subprocess.run(cmd).returncode
+
+    # Tentativi in ordine, dal più veloce/migliore al più sicuro
+    tentativi = []
+    if copia_se_possibile and info["video"] == "h264" and not info["hdr"]:
+        tentativi.append((True, False, "Video già H.264: lo copio senza ricomprimerlo"))
+    if info["hdr"]:
+        tentativi.append((False, True, None))
+    tentativi.append((False, False, None))
+
+    try:
+        for n, (copia, hdr, messaggio) in enumerate(tentativi):
+            if messaggio:
+                print(f"    {messaggio}")
+            ultimo = n == len(tentativi) - 1
+            if esegui(copia, hdr, silenzioso=not ultimo) == 0:
+                temporaneo.replace(destinazione)
+                return
+            if not ultimo:
+                print("\n    Primo tentativo non riuscito, riprovo in modo diverso...")
+        raise RuntimeError("ffmpeg non è riuscito a convertire il video")
+    finally:
+        if temporaneo.exists():
+            temporaneo.unlink()
+
+
+# ---------------------------------------------------------------- logica comune
+
+def trova_file(cartella: Path, estensioni: set, ricorsivo: bool) -> list:
+    pattern = "**/*" if ricorsivo else "*"
+    return sorted(f for f in cartella.glob(pattern)
+                  if f.is_file() and f.suffix.lower() in estensioni
+                  and ".parziale." not in f.name)
+
+
+def mappa_uscite(files: list, args, estensione: str) -> list:
+    """Abbina a ogni file il percorso di uscita. Se due file hanno lo stesso
+    nome (es. foto.png e foto.webp) aggiunge il formato: foto_png.jpg."""
+    base = [args.destinazione / f.relative_to(args.origine).with_suffix(estensione)
+            for f in files]
+    conteggi = {}
+    for out in base:
+        conteggi[out] = conteggi.get(out, 0) + 1
+    coppie = []
+    for f, out in zip(files, base):
+        if conteggi[out] > 1:
+            out = out.with_name(f"{out.stem}_{f.suffix[1:].lower()}{estensione}")
+        if out.resolve() == f.resolve():  # non sovrascrivere mai l'originale
+            out = out.with_name(out.stem + "_convertito" + estensione)
+        coppie.append((f, out))
+    return coppie
+
+
+def elabora_foto(args, estensioni: set) -> list:
+    files = trova_file(args.origine, estensioni, args.ricorsivo)
+    print(f"\n--- FOTO: {len(files)} file trovati ---")
+    conteggio = [0, 0, 0]  # convertiti, saltati, errori
+    for i, (f, out) in enumerate(mappa_uscite(files, args, ".jpg"), 1):
+        nome = out.relative_to(args.destinazione)
+        if out.exists() and not args.sovrascrivi:
+            print(f"[{i}/{len(files)}] Già presente, salto: {nome}")
+            conteggio[1] += 1
+            continue
+        try:
+            converti_foto(f, out, args.qualita)
+            print(f"[{i}/{len(files)}] OK: {f.name} -> {nome}")
+            conteggio[0] += 1
+        except UnidentifiedImageError:
+            print(f"[{i}/{len(files)}] ERRORE: {f.name} è danneggiato o non è un'immagine")
+            conteggio[2] += 1
+        except Exception as e:
+            print(f"[{i}/{len(files)}] ERRORE su {f.name}: {e}")
+            conteggio[2] += 1
+    return conteggio
+
+
+def elabora_video(args, estensioni: set, solo_hevc: bool) -> list:
+    files = trova_file(args.origine, estensioni, args.ricorsivo)
+    print(f"\n--- VIDEO: {len(files)} file trovati ---")
+    crf = QUALITA_VIDEO[args.qualita_video]
+    conteggio = [0, 0, 0]
+    for i, (f, out) in enumerate(mappa_uscite(files, args, ".mp4"), 1):
+        nome = out.relative_to(args.destinazione)
+        if out.exists() and not args.sovrascrivi:
+            print(f"[{i}/{len(files)}] Già presente, salto: {nome}")
+            conteggio[1] += 1
+            continue
+        info = info_video(f)
+        if info["video"] is None:
+            print(f"[{i}/{len(files)}] Nessun video leggibile, salto: {f.name}")
+            conteggio[1] += 1
+            continue
+        if solo_hevc and info["video"] != "hevc":
+            print(f"[{i}/{len(files)}] Non è HEVC ({info['video']}), salto: {f.name}")
+            conteggio[1] += 1
+            continue
+        print(f"[{i}/{len(files)}] Converto {f.name} ({info['video']}"
+              f"{', HDR' if info['hdr'] else ''})... può richiedere qualche minuto")
+        try:
+            converti_video(f, out, crf, info, copia_se_possibile=not solo_hevc)
+            print(f"    OK -> {nome}")
+            conteggio[0] += 1
+        except Exception as e:
+            print(f"    ERRORE: {e}")
+            conteggio[2] += 1
+    return conteggio
+
+
+def converti(args) -> int:
+    risultati = []
+    if args.strumento == "iphone":
+        if args.tipo in ("foto", "tutto"):
+            risultati.append(elabora_foto(args, EST_FOTO_IPHONE))
+        if args.tipo in ("video", "tutto"):
+            risultati.append(elabora_video(args, EST_VIDEO_IPHONE, solo_hevc=True))
+    elif args.strumento == "foto":
+        risultati.append(elabora_foto(args, EST_FOTO_TUTTE))
+    else:
+        risultati.append(elabora_video(args, EST_VIDEO_TUTTE, solo_hevc=False))
+    ok, saltati, errori = (sum(c) for c in zip(*risultati))
+    print(f"\nFatto. Convertiti: {ok}  Saltati: {saltati}  Errori: {errori}")
+    return 1 if errori else 0
+
+
+# ---------------------------------------------------------------- menu con le frecce
+
+try:
+    import questionary
+    from questionary import Choice, Style
+    STILE = Style([
+        ("qmark", "fg:#00b4d8 bold"),
+        ("question", "bold"),
+        ("pointer", "fg:#00b4d8 bold"),
+        ("highlighted", "fg:#00b4d8 bold"),
+        ("selected", "fg:#00b4d8"),
+        ("answer", "fg:#2a9d8f bold"),
+        ("instruction", "fg:#888888 italic"),
+    ])
+except ImportError:
+    questionary = None
+
+USA_FRECCE = questionary is not None and sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def scegli(domanda: str, opzioni: list, default=None):
+    """opzioni = [(valore, testo), ...]. Menu con le frecce, oppure numerato
+    se il terminale non lo supporta."""
+    global USA_FRECCE
+    if USA_FRECCE:
+        try:
+            scelte = [Choice(testo, value=valore) for valore, testo in opzioni]
+            iniziale = next((c for c in scelte if c.value == default), None)
+            return questionary.select(
+                domanda, choices=scelte, default=iniziale, style=STILE,
+                qmark="?", pointer="❯",
+                instruction="(usa le frecce ↑ ↓ e premi Invio)").unsafe_ask()
+        except (KeyboardInterrupt, EOFError):
+            raise
+        except Exception:
+            USA_FRECCE = False  # terminale non compatibile: uso i numeri
+    print(domanda)
+    for n, (_, testo) in enumerate(opzioni, 1):
+        print(f"  {n}) {testo}")
+    indice_def = next((n for n, (v, _) in enumerate(opzioni, 1) if v == default), 1)
+    while True:
+        r = input(f"Scelta [{indice_def}]: ").strip() or str(indice_def)
+        if r.isdigit() and 1 <= int(r) <= len(opzioni):
+            return opzioni[int(r) - 1][0]
+        print("  Scelta non valida, riprova.")
+
+
+def si_no(domanda: str, default: bool) -> bool:
+    return scegli(domanda, [(True, "Sì"), (False, "No")], default)
+
+
+def pulisci_percorso(testo: str) -> str:
+    testo = testo.strip()
+    if testo.startswith("& "):  # PowerShell aggiunge "& " quando trascini
+        testo = testo[2:]
+    return testo.strip().strip('"').strip("'").strip()
+
+
+def chiedi_cartella(domanda: str, deve_esistere: bool) -> Path:
+    while True:
+        if USA_FRECCE:
+            try:
+                print("  (scrivi il percorso o trascina qui la cartella; Tab completa il nome)")
+                testo = questionary.path(
+                    domanda, only_directories=True, style=STILE, qmark="?"
+                ).unsafe_ask()
+            except (KeyboardInterrupt, EOFError):
+                raise
+            except Exception:
+                testo = input(domanda + " ")
+        else:
+            testo = input(domanda + " ")
+        testo = pulisci_percorso(testo)
+        if not testo:
+            print("  Scrivi un percorso (puoi anche trascinare qui la cartella).")
+            continue
+        cartella = Path(testo).expanduser()
+        if deve_esistere and not cartella.is_dir():
+            print(f"  La cartella '{cartella}' non esiste, riprova.")
+            continue
+        return cartella
+
+
+def modalita_interattiva() -> int:
+    while True:
+        print("\n" + "=" * 46)
+        print("      CONVERTITORE DI FOTO E VIDEO")
+        print("=" * 46 + "\n")
+
+        strumento = scegli("Quale strumento vuoi usare?", [
+            ("iphone", STRUMENTI["iphone"]),
+            ("foto", STRUMENTI["foto"]),
+            ("video", STRUMENTI["video"]),
+            (None, "Esci"),
+        ], "iphone")
+        if strumento is None:
+            return 0
+
+        tipo = "tutto"
+        if strumento == "iphone":
+            tipo = scegli("Cosa vuoi convertire?", [
+                ("tutto", "Foto e video"),
+                ("foto", "Solo foto  (HEIC -> JPG)"),
+                ("video", "Solo video (HEVC -> MP4)"),
+            ], "tutto")
+
+        fa_foto = strumento == "foto" or (strumento == "iphone" and tipo != "video")
+        fa_video = strumento == "video" or (strumento == "iphone" and tipo != "foto")
+
+        origine = chiedi_cartella("Cartella di ORIGINE:", deve_esistere=True)
+        destinazione = chiedi_cartella("Cartella di DESTINAZIONE:", deve_esistere=False)
+
+        qualita, qualita_video = 90, "media"
+        if fa_foto:
+            qualita = scegli("Qualità delle foto JPG:", [
+                (95, "Massima (95)"),
+                (90, "Alta    (90)  - consigliata"),
+                (80, "Media   (80)"),
+                (70, "Bassa   (70)  - file più piccoli"),
+            ], 90)
+        if fa_video:
+            qualita_video = scegli("Qualità dei video:", [
+                ("alta", "Alta   - file più grandi"),
+                ("media", "Media  - consigliata"),
+                ("bassa", "Bassa  - file più piccoli"),
+            ], "media")
+        ricorsivo = si_no("Includere le sottocartelle?", False)
+        sovrascrivi = si_no("Sovrascrivere i file già convertiti?", False)
+
+        print("\nRiepilogo:")
+        print(f"  Strumento:     {STRUMENTI[strumento]}")
+        if strumento == "iphone":
+            print(f"  Cosa:          {'foto e video' if tipo == 'tutto' else 'solo ' + tipo}")
+        print(f"  Origine:       {origine}")
+        print(f"  Destinazione:  {destinazione}")
+        if fa_foto:
+            print(f"  Qualità foto:  {qualita}")
+        if fa_video:
+            print(f"  Qualità video: {qualita_video}")
+        print(f"  Sottocartelle: {'sì' if ricorsivo else 'no'}")
+        print(f"  Sovrascrivi:   {'sì' if sovrascrivi else 'no'}\n")
+
+        if si_no("Avviare la conversione?", True):
+            converti(argparse.Namespace(
+                strumento=strumento, tipo=tipo,
+                origine=origine, destinazione=destinazione,
+                qualita=qualita, qualita_video=qualita_video,
+                ricorsivo=ricorsivo, sovrascrivi=sovrascrivi))
+        else:
+            print("Annullato.")
+
+        print()
+        if not si_no("Vuoi fare un'altra conversione?", False):
+            return 0
+
+
+# ---------------------------------------------------------------- avvio
+
+def main() -> int:
+    if len(sys.argv) == 1:
+        try:
+            return modalita_interattiva()
+        except (KeyboardInterrupt, EOFError):
+            print("\nInterrotto.")
+            return 1
+
+    p = argparse.ArgumentParser(description="Converte foto in JPG e video in MP4.")
+    p.add_argument("origine", type=Path, help="Cartella con i file da convertire")
+    p.add_argument("destinazione", type=Path, help="Cartella dove salvare i file convertiti")
+    p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
+                   help="iphone (default), foto o video")
+    p.add_argument("--tipo", choices=["foto", "video", "tutto"], default="tutto",
+                   help="solo per lo strumento iphone (default tutto)")
+    p.add_argument("--qualita", type=int, default=90, help="Qualità JPG 1-100 (default 90)")
+    p.add_argument("--qualita-video", choices=list(QUALITA_VIDEO), default="media")
+    p.add_argument("--ricorsivo", action="store_true", help="Cerca anche nelle sottocartelle")
+    p.add_argument("--sovrascrivi", action="store_true", help="Riconverte i file già presenti")
+    args = p.parse_args()
+
+    if not args.origine.is_dir():
+        print(f"Errore: la cartella '{args.origine}' non esiste.")
+        return 1
+    if not 1 <= args.qualita <= 100:
+        print("Errore: --qualita deve essere tra 1 e 100.")
+        return 1
+    try:
+        return converti(args)
+    except KeyboardInterrupt:
+        print("\nInterrotto.")
+        return 1
+
+
+if __name__ == "__main__":
+    codice = main()
+    if len(sys.argv) == 1:
+        input("\nPremi Invio per chiudere...")
+    sys.exit(codice)
