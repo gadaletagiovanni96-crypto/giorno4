@@ -15,7 +15,32 @@ Mantiene l'orientamento e i dati EXIF (data, fotocamera…).
 pip install -r requirements.txt
 ```
 
-## Uso
+## Uso facile (modalità interattiva)
+
+Avvia il programma senza scrivere altro:
+
+```
+python converti.py
+```
+
+Il programma ti chiede, una domanda alla volta:
+
+```
+========================================
+   CONVERTITORE HEIC -> JPG
+========================================
+Cartella di ORIGINE (foto HEIC): C:\Foto\iPhone
+Cartella di DESTINAZIONE (JPG): C:\Foto\JPG
+Qualità JPG da 1 a 100 [90]:
+Includere le sottocartelle? [s/N]:
+Sovrascrivere i JPG già esistenti? [s/N]:
+Avviare la conversione? [S/n]:
+```
+
+- Premi **Invio** per usare il valore tra parentesi.
+- Per scrivere il percorso puoi anche **trascinare la cartella** nella finestra del terminale.
+
+## Uso rapido (tutto in un comando)
 
 ```
 python converti.py CARTELLA_ORIGINE CARTELLA_DESTINAZIONE
