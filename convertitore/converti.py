@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Convertitore di foto e video con tre strumenti:
+"""Convertitore di foto e video con quattro strumenti:
 
   1. iPhone        foto HEIC -> JPG e video HEVC -> MP4
   2. Foto -> JPG   qualsiasi foto (PNG, WEBP, HEIC, TIFF, BMP, GIF, AVIF...) in JPG
   3. Video -> MP4  qualsiasi video (MOV, AVI, MKV, WMV, WEBM...) in MP4
+  4. Mescola       mette un numero casuale davanti al nome dei file,
+                   così ordinandoli per nome risultano in ordine casuale
 
 Uso:
     python converti.py                         (menu con le frecce)
-    python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video [opzioni]
+    python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video|mescola [opzioni]
+    python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
 """
 import argparse
+import random
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -45,7 +50,10 @@ STRUMENTI = {
     "iphone": "iPhone: foto HEIC -> JPG e video HEVC -> MP4",
     "foto": "Qualsiasi foto -> JPG",
     "video": "Qualsiasi video -> MP4",
+    "mescola": "Mescola: numero casuale davanti al nome dei file",
 }
+
+FILE_DI_SISTEMA = {"thumbs.db", "desktop.ini", ".ds_store"}
 
 
 # ---------------------------------------------------------------- foto
@@ -234,7 +242,83 @@ def elabora_video(args, estensioni: set, solo_hevc: bool) -> list:
     return conteggio
 
 
+# ---------------------------------------------------------------- mescola
+
+def file_da_mescolare(cartella: Path) -> list:
+    return sorted(f for f in cartella.iterdir()
+                  if f.is_file() and not f.name.startswith(".")
+                  and f.name.lower() not in FILE_DI_SISTEMA)
+
+
+def togli_vecchio_numero(files: list) -> list:
+    """Se TUTTI i file hanno già un numero davanti della stessa lunghezza
+    (es. 007_foto.jpg), vuol dire che erano già stati mescolati: tolgo il
+    vecchio numero, così non se ne accumulano due."""
+    trovati = [re.match(r"^(\d+)_(.+)$", f.name) for f in files]
+    if files and all(trovati) and len({len(m.group(1)) for m in trovati}) == 1:
+        return [m.group(2) for m in trovati]
+    return [f.name for f in files]
+
+
+def mescola(origine: Path, destinazione: Path | None) -> int:
+    """destinazione=None significa: rinomina i file nella cartella di origine."""
+    files = file_da_mescolare(origine)
+    print(f"\n--- MESCOLA: {len(files)} file trovati ---")
+    if not files:
+        return 0
+
+    nomi = togli_vecchio_numero(files)
+    numeri = list(range(1, len(files) + 1))
+    random.shuffle(numeri)
+    cifre = max(3, len(str(len(files))))  # 001, 002... così l'ordine per nome funziona
+    nuovi = [f"{n:0{cifre}d}_{nome}" for n, nome in zip(numeri, nomi)]
+    coppie = sorted(zip(files, nuovi), key=lambda c: c[1])
+
+    ok = saltati = errori = 0
+    if destinazione is not None:
+        destinazione.mkdir(parents=True, exist_ok=True)
+        for i, (f, nuovo) in enumerate(coppie, 1):
+            out = destinazione / nuovo
+            if out.exists():
+                print(f"[{i}/{len(files)}] Esiste già, salto: {nuovo}")
+                saltati += 1
+                continue
+            try:
+                shutil.copy2(f, out)
+                print(f"[{i}/{len(files)}] {f.name} -> {nuovo}")
+                ok += 1
+            except Exception as e:
+                print(f"[{i}/{len(files)}] ERRORE su {f.name}: {e}")
+                errori += 1
+    else:
+        # Due passaggi (prima nomi temporanei, poi definitivi) per evitare
+        # che un nuovo nome coincida con quello di un file non ancora rinominato.
+        temporanei = []
+        for i, (f, nuovo) in enumerate(coppie):
+            tmp = f.with_name(f".mescola_{i}_{f.name}")
+            try:
+                f.rename(tmp)
+                temporanei.append((f, tmp, nuovo))
+            except Exception as e:
+                print(f"ERRORE su {f.name}: {e}")
+                errori += 1
+        for i, (f, tmp, nuovo) in enumerate(temporanei, 1):
+            try:
+                tmp.rename(f.with_name(nuovo))
+                print(f"[{i}/{len(temporanei)}] {f.name} -> {nuovo}")
+                ok += 1
+            except Exception as e:
+                tmp.rename(f)  # rimetto il nome originale
+                print(f"[{i}/{len(temporanei)}] ERRORE su {f.name}: {e}")
+                errori += 1
+
+    print(f"\nFatto. Mescolati: {ok}  Saltati: {saltati}  Errori: {errori}")
+    return 1 if errori else 0
+
+
 def converti(args) -> int:
+    if args.strumento == "mescola":
+        return mescola(args.origine, None if args.rinomina else args.destinazione)
     risultati = []
     if args.strumento == "iphone":
         if args.tipo in ("foto", "tutto"):
@@ -333,20 +417,59 @@ def chiedi_cartella(domanda: str, deve_esistere: bool) -> Path:
         return cartella
 
 
+def menu_mescola() -> None:
+    origine = chiedi_cartella("Cartella con i file da mescolare:", deve_esistere=True)
+    modo = scegli("Come vuoi ottenere i file mescolati?", [
+        ("copia", "Copia in un'altra cartella (gli originali restano come sono)"),
+        ("rinomina", "Rinomina i file nella stessa cartella"),
+    ], "copia")
+    destinazione = None
+    if modo == "copia":
+        while True:
+            destinazione = chiedi_cartella("Cartella di DESTINAZIONE:", deve_esistere=False)
+            if destinazione.resolve() != origine.resolve():
+                break
+            print("  Deve essere diversa dall'origine (per rinominare sul posto scegli l'altra opzione).")
+
+    n = len(file_da_mescolare(origine))
+    print("\nRiepilogo:")
+    print(f"  Strumento:     {STRUMENTI['mescola']}")
+    print(f"  Cartella:      {origine}  ({n} file)")
+    if destinazione:
+        print(f"  Copia in:      {destinazione}")
+        if destinazione.is_dir() and any(destinazione.iterdir()):
+            print("  Attenzione:    la cartella di destinazione non è vuota")
+    else:
+        print("  Modo:          rinomina sul posto")
+    print("  Esempio:       foto.jpg -> 042_foto.jpg\n")
+
+    if si_no("Avviare?", True):
+        mescola(origine, destinazione)
+    else:
+        print("Annullato.")
+
+
 def modalita_interattiva() -> int:
     while True:
         print("\n" + "=" * 46)
-        print("      CONVERTITORE DI FOTO E VIDEO")
+        print("        STRUMENTI PER FOTO E VIDEO")
         print("=" * 46 + "\n")
 
         strumento = scegli("Quale strumento vuoi usare?", [
             ("iphone", STRUMENTI["iphone"]),
             ("foto", STRUMENTI["foto"]),
             ("video", STRUMENTI["video"]),
+            ("mescola", STRUMENTI["mescola"]),
             (None, "Esci"),
         ], "iphone")
         if strumento is None:
             return 0
+        if strumento == "mescola":
+            menu_mescola()
+            print()
+            if not si_no("Vuoi fare un'altra operazione?", False):
+                return 0
+            continue
 
         tipo = "tutto"
         if strumento == "iphone":
@@ -402,7 +525,7 @@ def modalita_interattiva() -> int:
             print("Annullato.")
 
         print()
-        if not si_no("Vuoi fare un'altra conversione?", False):
+        if not si_no("Vuoi fare un'altra operazione?", False):
             return 0
 
 
@@ -418,9 +541,12 @@ def main() -> int:
 
     p = argparse.ArgumentParser(description="Converte foto in JPG e video in MP4.")
     p.add_argument("origine", type=Path, help="Cartella con i file da convertire")
-    p.add_argument("destinazione", type=Path, help="Cartella dove salvare i file convertiti")
+    p.add_argument("destinazione", type=Path, nargs="?",
+                   help="Cartella dove salvare i file convertiti")
     p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
-                   help="iphone (default), foto o video")
+                   help="iphone (default), foto, video o mescola")
+    p.add_argument("--rinomina", action="store_true",
+                   help="solo per mescola: rinomina i file sul posto invece di copiarli")
     p.add_argument("--tipo", choices=["foto", "video", "tutto"], default="tutto",
                    help="solo per lo strumento iphone (default tutto)")
     p.add_argument("--qualita", type=int, default=90, help="Qualità JPG 1-100 (default 90)")
@@ -431,6 +557,13 @@ def main() -> int:
 
     if not args.origine.is_dir():
         print(f"Errore: la cartella '{args.origine}' non esiste.")
+        return 1
+    if args.destinazione is None and not (args.strumento == "mescola" and args.rinomina):
+        print("Errore: indica la cartella di destinazione.")
+        return 1
+    if (args.strumento == "mescola" and not args.rinomina
+            and args.destinazione.resolve() == args.origine.resolve()):
+        print("Errore: la destinazione deve essere diversa dall'origine (oppure usa --rinomina).")
         return 1
     if not 1 <= args.qualita <= 100:
         print("Errore: --qualita deve essere tra 1 e 100.")
