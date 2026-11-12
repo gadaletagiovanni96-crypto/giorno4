@@ -181,10 +181,26 @@ def mappa_uscite(files: list, args, estensione: str) -> list:
     for f, out in zip(files, base):
         if conteggi[out] > 1:
             out = out.with_name(f"{out.stem}_{f.suffix[1:].lower()}{estensione}")
-        if out.resolve() == f.resolve():  # non sovrascrivere mai l'originale
+        if out.resolve() == f.resolve() and not args.sostituisci:
+            # stesso nome dell'originale (es. video.mp4): non lo tocco
             out = out.with_name(out.stem + "_convertito" + estensione)
         coppie.append((f, out))
     return coppie
+
+
+def gia_presente(f: Path, out: Path, args) -> bool:
+    return out.exists() and out.resolve() != f.resolve() and not args.sovrascrivi
+
+
+def elimina_originale(f: Path, out: Path, args) -> str:
+    """In modalità 'sostituisci' cancella l'originale, ma solo se il file
+    convertito esiste davvero e non è vuoto."""
+    if not args.sostituisci or out.resolve() == f.resolve():
+        return ""
+    if out.is_file() and out.stat().st_size > 0:
+        f.unlink()
+        return "  (originale eliminato)"
+    return "  (originale mantenuto: il file convertito sembra vuoto)"
 
 
 def elabora_foto(args, estensioni: set) -> list:
@@ -193,13 +209,14 @@ def elabora_foto(args, estensioni: set) -> list:
     conteggio = [0, 0, 0]  # convertiti, saltati, errori
     for i, (f, out) in enumerate(mappa_uscite(files, args, ".jpg"), 1):
         nome = out.relative_to(args.destinazione)
-        if out.exists() and not args.sovrascrivi:
+        if gia_presente(f, out, args):
             print(f"[{i}/{len(files)}] Già presente, salto: {nome}")
             conteggio[1] += 1
             continue
         try:
             converti_foto(f, out, args.qualita)
-            print(f"[{i}/{len(files)}] OK: {f.name} -> {nome}")
+            nota = elimina_originale(f, out, args)
+            print(f"[{i}/{len(files)}] OK: {f.name} -> {nome}{nota}")
             conteggio[0] += 1
         except UnidentifiedImageError:
             print(f"[{i}/{len(files)}] ERRORE: {f.name} è danneggiato o non è un'immagine")
@@ -217,7 +234,7 @@ def elabora_video(args, estensioni: set, solo_hevc: bool) -> list:
     conteggio = [0, 0, 0]
     for i, (f, out) in enumerate(mappa_uscite(files, args, ".mp4"), 1):
         nome = out.relative_to(args.destinazione)
-        if out.exists() and not args.sovrascrivi:
+        if gia_presente(f, out, args):
             print(f"[{i}/{len(files)}] Già presente, salto: {nome}")
             conteggio[1] += 1
             continue
@@ -230,11 +247,17 @@ def elabora_video(args, estensioni: set, solo_hevc: bool) -> list:
             print(f"[{i}/{len(files)}] Non è HEVC ({info['video']}), salto: {f.name}")
             conteggio[1] += 1
             continue
+        if (args.destinazione.resolve() == args.origine.resolve()
+                and f.suffix.lower() == ".mp4" and info["video"] == "h264"
+                and not info["hdr"] and info["audio"] in (None, "aac", "mp3")):
+            print(f"[{i}/{len(files)}] È già un MP4 H.264, salto: {f.name}")
+            conteggio[1] += 1
+            continue
         print(f"[{i}/{len(files)}] Converto {f.name} ({info['video']}"
               f"{', HDR' if info['hdr'] else ''})... può richiedere qualche minuto")
         try:
             converti_video(f, out, crf, info, copia_se_possibile=not solo_hevc)
-            print(f"    OK -> {nome}")
+            print(f"    OK -> {nome}{elimina_originale(f, out, args)}")
             conteggio[0] += 1
         except Exception as e:
             print(f"    ERRORE: {e}")
@@ -417,6 +440,30 @@ def chiedi_cartella(domanda: str, deve_esistere: bool) -> Path:
         return cartella
 
 
+def chiedi_dove_salvare(origine: Path) -> tuple:
+    """Restituisce (cartella di destinazione, sostituire gli originali?)."""
+    while True:
+        modo = scegli("Dove vuoi salvare i file convertiti?", [
+            ("altra", "In un'altra cartella (gli originali restano come sono)"),
+            ("accanto", "Nella stessa cartella, accanto agli originali"),
+            ("sostituisci", "Nella stessa cartella, SOSTITUENDO gli originali"),
+        ], "altra")
+        if modo == "accanto":
+            return origine, False
+        if modo == "sostituisci":
+            print("\n  ⚠  ATTENZIONE: ogni file convertito con successo prenderà il posto")
+            print("     dell'originale, che verrà ELIMINATO definitivamente")
+            print("     (non finisce nel cestino). I file saltati o con errori restano.\n")
+            if si_no("Sei sicuro di voler sostituire gli originali?", False):
+                return origine, True
+            print()
+            continue
+        destinazione = chiedi_cartella("Cartella di DESTINAZIONE:", deve_esistere=False)
+        if destinazione.resolve() != origine.resolve():
+            return destinazione, False
+        print("  È la stessa cartella di origine: scegli una delle opzioni \"stessa cartella\".\n")
+
+
 def menu_mescola() -> None:
     origine = chiedi_cartella("Cartella con i file da mescolare:", deve_esistere=True)
     modo = scegli("Come vuoi ottenere i file mescolati?", [
@@ -483,7 +530,7 @@ def modalita_interattiva() -> int:
         fa_video = strumento == "video" or (strumento == "iphone" and tipo != "foto")
 
         origine = chiedi_cartella("Cartella di ORIGINE:", deve_esistere=True)
-        destinazione = chiedi_cartella("Cartella di DESTINAZIONE:", deve_esistere=False)
+        destinazione, sostituisci = chiedi_dove_salvare(origine)
 
         qualita, qualita_video = 90, "media"
         if fa_foto:
@@ -507,20 +554,29 @@ def modalita_interattiva() -> int:
         if strumento == "iphone":
             print(f"  Cosa:          {'foto e video' if tipo == 'tutto' else 'solo ' + tipo}")
         print(f"  Origine:       {origine}")
-        print(f"  Destinazione:  {destinazione}")
+        if destinazione.resolve() != origine.resolve():
+            print(f"  Destinazione:  {destinazione}")
+        elif sostituisci:
+            print("  Destinazione:  stessa cartella, SOSTITUENDO gli originali")
+        else:
+            print("  Destinazione:  stessa cartella, accanto agli originali")
         if fa_foto:
             print(f"  Qualità foto:  {qualita}")
         if fa_video:
             print(f"  Qualità video: {qualita_video}")
         print(f"  Sottocartelle: {'sì' if ricorsivo else 'no'}")
-        print(f"  Sovrascrivi:   {'sì' if sovrascrivi else 'no'}\n")
+        print(f"  Sovrascrivi:   {'sì' if sovrascrivi else 'no'}")
+        if sostituisci:
+            print("\n  ⚠  Gli originali convertiti verranno ELIMINATI.")
+        print()
 
         if si_no("Avviare la conversione?", True):
             converti(argparse.Namespace(
                 strumento=strumento, tipo=tipo,
                 origine=origine, destinazione=destinazione,
                 qualita=qualita, qualita_video=qualita_video,
-                ricorsivo=ricorsivo, sovrascrivi=sovrascrivi))
+                ricorsivo=ricorsivo, sovrascrivi=sovrascrivi,
+                sostituisci=sostituisci))
         else:
             print("Annullato.")
 
@@ -545,6 +601,8 @@ def main() -> int:
                    help="Cartella dove salvare i file convertiti")
     p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
                    help="iphone (default), foto, video o mescola")
+    p.add_argument("--sostituisci", action="store_true",
+                   help="salva nella cartella di origine ed ELIMINA gli originali convertiti")
     p.add_argument("--rinomina", action="store_true",
                    help="solo per mescola: rinomina i file sul posto invece di copiarli")
     p.add_argument("--tipo", choices=["foto", "video", "tutto"], default="tutto",
@@ -558,6 +616,15 @@ def main() -> int:
     if not args.origine.is_dir():
         print(f"Errore: la cartella '{args.origine}' non esiste.")
         return 1
+    if args.sostituisci:
+        if args.strumento == "mescola":
+            print("Errore: per mescola usa --rinomina.")
+            return 1
+        if args.destinazione is not None and args.destinazione.resolve() != args.origine.resolve():
+            print("Errore: --sostituisci funziona solo salvando nella cartella di origine.")
+            return 1
+        args.destinazione = args.origine
+        print("ATTENZIONE: gli originali convertiti con successo verranno ELIMINATI.")
     if args.destinazione is None and not (args.strumento == "mescola" and args.rinomina):
         print("Errore: indica la cartella di destinazione.")
         return 1

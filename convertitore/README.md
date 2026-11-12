@@ -15,7 +15,13 @@ Dettagli:
 - I video diventano MP4 H.264 + audio AAC, che si apre su qualsiasi PC, TV o telefono.
   Se un video è già H.264 viene solo "travasato" in MP4: velocissimo e senza perdita di qualità.
   I video HDR dell'iPhone vengono convertiti con i colori corretti.
-- Gli originali non vengono mai modificati. I file già convertiti vengono saltati.
+- I file già convertiti vengono saltati.
+- Puoi scegliere **dove salvare** i file convertiti:
+  - in **un'altra cartella** (gli originali restano come sono);
+  - nella **stessa cartella, accanto agli originali**;
+  - nella **stessa cartella, sostituendo gli originali**: ⚠ ogni originale convertito con
+    successo viene **eliminato definitivamente** (non va nel cestino). Il programma lo
+    avvisa e chiede conferma. I file saltati o con errori non vengono toccati.
 - Se due file hanno lo stesso nome (`foto.png` e `foto.webp`) diventano `foto_png.jpg` e `foto_webp.jpg`.
 - Non serve installare ffmpeg a parte: lo installa pip.
 
@@ -72,6 +78,8 @@ ti mostra un riepilogo e parte.
 py converti.py "C:\Foto\Origine" "C:\Foto\Convertite" --strumento video
 py converti.py "C:\Foto\Origine" "C:\Foto\Mescolate" --strumento mescola
 py converti.py "C:\Foto\Origine" --strumento mescola --rinomina
+py converti.py "C:\Foto\Origine" "C:\Foto\Origine" --strumento foto
+py converti.py "C:\Foto\Origine" --strumento foto --sostituisci
 ```
 
 | Opzione                         | Effetto                                              |
@@ -82,4 +90,5 @@ py converti.py "C:\Foto\Origine" --strumento mescola --rinomina
 | `--qualita-video alta`          | `alta`, `media` (default) o `bassa`                  |
 | `--ricorsivo`                   | Converte anche nelle sottocartelle                   |
 | `--sovrascrivi`                 | Riconverte anche i file già presenti                 |
+| `--sostituisci`                 | Salva nella cartella di origine ed ⚠ ELIMINA gli originali convertiti |
 | `--rinomina`                    | Solo per `mescola`: rinomina sul posto invece di copiare |
