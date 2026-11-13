@@ -25,6 +25,14 @@ Dettagli:
 - Se due file hanno lo stesso nome (`foto.png` e `foto.webp`) diventano `foto_png.jpg` e `foto_webp.jpg`.
 - Non serve installare ffmpeg a parte: lo installa pip.
 
+### Un solo file
+
+Nei tre convertitori, al posto della cartella puoi indicare **una singola foto o un singolo video**.
+In quel caso viene convertito solo quel file, nella **sua stessa cartella e con lo stesso nome**
+(cambia solo l'estensione, es. `IMG_1234.HEIC` → `IMG_1234.jpg`), e ⚠ **l'originale viene
+sovrascritto**. Le domande su destinazione e sottocartelle vengono saltate.
+Se indichi una cartella, tutto funziona come sempre.
+
 ### Mescola
 
 - Funziona con **qualsiasi tipo di file** della cartella (non entra nelle sottocartelle;
@@ -41,18 +49,37 @@ Dettagli:
 1. Installa **Python 3** da <https://www.python.org/downloads/>
    (su Windows spunta **"Add python.exe to PATH"** durante l'installazione).
 2. Scarica questa cartella (su GitHub: *Code → Download ZIP*, poi estrai).
-3. Apri il terminale nella cartella `convertitore` e installa le librerie:
+3. Apri il terminale nella cartella `convertitore` e installa il programma:
 
 ```
-py -m pip install -r requirements.txt
+py -m pip install .
 ```
 
-(Su Mac/Linux: `python3 -m pip install -r requirements.txt`)
+(Su Mac/Linux: `python3 -m pip install .` — il punto finale è importante.)
+
+Fatto: da ora puoi aprire il terminale **in qualsiasi cartella** e scrivere
+
+```
+converti
+```
+
+Suggerimento: in Esplora file apri la cartella con le foto, scrivi `cmd` nella barra degli
+indirizzi e premi Invio; poi scrivi `converti` e, quando chiede la cartella di origine,
+premi solo **Invio** per usare la cartella in cui ti trovi.
+
+- Se Windows risponde che `converti` non è riconosciuto, usa `py -m converti`
+  (funziona allo stesso modo da qualsiasi cartella), oppure reinstalla Python
+  spuntando "Add python.exe to PATH".
+- **Per aggiornare** a una nuova versione: scarica il nuovo ZIP ed esegui di nuovo
+  `py -m pip install .` nella cartella `convertitore`.
+- Per disinstallare: `py -m pip uninstall convertitore`.
+- Puoi sempre avviarlo anche senza installarlo, dalla sua cartella, con `py converti.py`
+  (in quel caso servono le librerie: `py -m pip install -r requirements.txt`).
 
 ## Uso facile (menu con le frecce)
 
 ```
-py converti.py
+converti
 ```
 
 ```
@@ -75,11 +102,14 @@ ti mostra un riepilogo e parte.
 ## Uso rapido (tutto in un comando)
 
 ```
-py converti.py "C:\Foto\Origine" "C:\Foto\Convertite" --strumento video
-py converti.py "C:\Foto\Origine" "C:\Foto\Mescolate" --strumento mescola
-py converti.py "C:\Foto\Origine" --strumento mescola --rinomina
-py converti.py "C:\Foto\Origine" "C:\Foto\Origine" --strumento foto
-py converti.py "C:\Foto\Origine" --strumento foto --sostituisci
+converti "C:\Foto\Origine" "C:\Foto\Convertite" --strumento video
+converti "C:\Foto\Origine" "C:\Foto\Mescolate" --strumento mescola
+converti "C:\Foto\Origine" --strumento mescola --rinomina
+converti "C:\Foto\Origine" "C:\Foto\Origine" --strumento foto
+converti "C:\Foto\Origine" --strumento foto --sostituisci
+converti "C:\Foto\IMG_1234.HEIC"                      (un solo file, sul posto)
+converti "C:\Video\vacanza.avi" --strumento video     (un solo file, sul posto)
+converti .                                             (la cartella in cui ti trovi)
 ```
 
 | Opzione                         | Effetto                                              |

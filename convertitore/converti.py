@@ -7,7 +7,7 @@
   4. Mescola       mette un numero casuale davanti al nome dei file,
                    così ordinandoli per nome risultano in ordine casuale
 
-Uso:
+Uso (dopo "py -m pip install ." basta scrivere "converti" in qualsiasi cartella):
     python converti.py                         (menu con le frecce)
     python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video|mescola [opzioni]
     python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
@@ -444,15 +444,18 @@ def pulisci_percorso(testo: str) -> str:
 
 
 def chiedi_cartella(domanda: str, deve_esistere: bool,
-                    estensioni_file: set | None = None) -> Path:
+                    estensioni_file: set | None = None,
+                    vuoto_corrente: bool = False) -> Path:
     """Chiede una cartella. Se estensioni_file è indicato, accetta anche un
-    singolo file con una di quelle estensioni."""
+    singolo file con una di quelle estensioni. Con vuoto_corrente=True,
+    premendo solo Invio si usa la cartella in cui è aperto il terminale."""
     accetta_file = estensioni_file is not None
     while True:
         if USA_FRECCE:
             try:
                 cosa = "la cartella o il file" if accetta_file else "la cartella"
-                print(f"  (scrivi il percorso o trascina qui {cosa}; Tab completa il nome)")
+                extra = "; Invio = cartella corrente" if vuoto_corrente else ""
+                print(f"  (scrivi il percorso o trascina qui {cosa}; Tab completa il nome{extra})")
                 testo = questionary.path(
                     domanda, only_directories=not accetta_file, style=STILE, qmark="?"
                 ).unsafe_ask()
@@ -463,6 +466,9 @@ def chiedi_cartella(domanda: str, deve_esistere: bool,
         else:
             testo = input(domanda + " ")
         testo = pulisci_percorso(testo)
+        if not testo and vuoto_corrente:
+            print(f"  Uso la cartella corrente: {Path.cwd()}")
+            return Path.cwd()
         if not testo:
             print("  Scrivi un percorso (puoi anche trascinare qui la cartella).")
             continue
@@ -503,7 +509,8 @@ def chiedi_dove_salvare(origine: Path) -> tuple:
 
 
 def menu_mescola() -> None:
-    origine = chiedi_cartella("Cartella con i file da mescolare:", deve_esistere=True)
+    origine = chiedi_cartella("Cartella con i file da mescolare:", deve_esistere=True,
+                              vuoto_corrente=True)
     modo = scegli("Come vuoi ottenere i file mescolati?", [
         ("copia", "Copia in un'altra cartella (gli originali restano come sono)"),
         ("rinomina", "Rinomina i file nella stessa cartella"),
@@ -558,7 +565,8 @@ def modalita_interattiva() -> int:
 
         origine = chiedi_cartella("Cartella di ORIGINE (o una singola foto/video):",
                                   deve_esistere=True,
-                                  estensioni_file=estensioni_strumento(strumento))
+                                  estensioni_file=estensioni_strumento(strumento),
+                                  vuoto_corrente=True)
         singolo = origine.is_file()
 
         tipo = "tutto"
@@ -741,8 +749,13 @@ def main() -> int:
         return 1
 
 
+def avvia() -> None:
+    """Punto di partenza del comando "converti" installato con pip."""
+    sys.exit(main())
+
+
 if __name__ == "__main__":
     codice = main()
     if len(sys.argv) == 1:
-        input("\nPremi Invio per chiudere...")
+        input("\nPremi Invio per chiudere...")  # utile se avviato con doppio clic
     sys.exit(codice)
