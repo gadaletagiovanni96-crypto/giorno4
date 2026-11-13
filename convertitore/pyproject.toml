@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "convertitore"
 version = "1.0.0"
-description = "Strumenti per foto e video: HEIC/foto -> JPG, HEVC/video -> MP4, mescola"
+description = "Strumenti per foto e video: foto -> JPG, video -> MP4, PDF <-> JPG, mescola"
 requires-python = ">=3.10"
-dependencies = ["pillow", "pillow-heif", "imageio-ffmpeg", "questionary"]
+dependencies = ["pillow", "pillow-heif", "imageio-ffmpeg", "questionary", "pypdfium2", "img2pdf"]
 
 [project.scripts]
 converti = "converti:avvia"

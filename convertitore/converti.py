@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Convertitore di foto e video con quattro strumenti:
+"""Convertitore di foto e video con cinque strumenti:
 
   1. iPhone        foto HEIC -> JPG e video HEVC -> MP4
   2. Foto -> JPG   qualsiasi foto (PNG, WEBP, HEIC, TIFF, BMP, GIF, AVIF...) in JPG
   3. Video -> MP4  qualsiasi video (MOV, AVI, MKV, WMV, WEBM...) in MP4
-  4. Mescola       mette un numero casuale davanti al nome dei file,
+  4. PDF <-> JPG   un PDF diventa una serie di JPG (una per pagina),
+                   una cartella di immagini diventa un unico PDF
+  5. Mescola       mette un numero casuale davanti al nome dei file,
                    così ordinandoli per nome risultano in ordine casuale
 
 Uso (dopo "py -m pip install ." basta scrivere "converti" in qualsiasi cartella):
     python converti.py                         (menu con le frecce)
     python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video|mescola [opzioni]
     python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
+    python converti.py FILE.pdf [CARTELLA] --strumento pdf      (pagine -> JPG)
+    python converti.py CARTELLA [FILE.pdf] --strumento pdf      (immagini -> PDF)
     python converti.py FILE --strumento foto|video|iphone        (un solo file: lo
                                      converte sul posto, sostituendo l'originale)
 """
 import argparse
+import io
 import random
 import re
 import shutil
@@ -26,6 +31,8 @@ try:
     from PIL import Image, ImageOps, UnidentifiedImageError
     from pillow_heif import register_heif_opener
     import imageio_ffmpeg
+    import img2pdf
+    import pypdfium2 as pdfium
 except ImportError:
     sys.exit("Librerie mancanti. Esegui prima:  py -m pip install -r requirements.txt")
 
@@ -52,6 +59,7 @@ STRUMENTI = {
     "iphone": "iPhone: foto HEIC -> JPG e video HEVC -> MP4",
     "foto": "Qualsiasi foto -> JPG",
     "video": "Qualsiasi video -> MP4",
+    "pdf": "PDF <-> JPG: pagine del PDF in JPG, oppure immagini unite in un PDF",
     "mescola": "Mescola: numero casuale davanti al nome dei file",
 }
 
@@ -60,7 +68,9 @@ FILE_DI_SISTEMA = {"thumbs.db", "desktop.ini", ".ds_store"}
 
 # ---------------------------------------------------------------- foto
 
-def converti_foto(sorgente: Path, destinazione: Path, qualita: int) -> None:
+def apri_rgb(sorgente: Path) -> tuple:
+    """Apre una foto qualsiasi e la restituisce raddrizzata e in RGB,
+    insieme ai suoi dati EXIF."""
     with Image.open(sorgente) as originale:
         originale.seek(0)  # GIF animate / TIFF multipagina: primo fotogramma
         img = ImageOps.exif_transpose(originale)  # raddrizza la foto
@@ -77,12 +87,131 @@ def converti_foto(sorgente: Path, destinazione: Path, qualita: int) -> None:
             img = sfondo
         else:
             img = img.convert("RGB")
+        img.load()
+    return img, exif
 
-        opzioni = {"quality": qualita}
-        if exif:
-            opzioni["exif"] = exif
-        destinazione.parent.mkdir(parents=True, exist_ok=True)
-        img.save(destinazione, "JPEG", **opzioni)
+
+def converti_foto(sorgente: Path, destinazione: Path, qualita: int) -> None:
+    img, exif = apri_rgb(sorgente)
+    opzioni = {"quality": qualita}
+    if exif:
+        opzioni["exif"] = exif
+    destinazione.parent.mkdir(parents=True, exist_ok=True)
+    img.save(destinazione, "JPEG", **opzioni)
+
+
+# ---------------------------------------------------------------- PDF
+
+EST_IMMAGINI_PDF = EST_FOTO_TUTTE | {".jpg", ".jpeg"}
+
+PAGINA_A4 = (img2pdf.mm_to_pt(210), img2pdf.mm_to_pt(297))
+
+
+def ordine_naturale(f: Path) -> list:
+    """Ordina "foto2" prima di "foto10", come fa Esplora file."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", f.name)]
+
+
+def immagini_in_cartella(cartella: Path) -> list:
+    return sorted((f for f in cartella.iterdir()
+                   if f.is_file() and f.suffix.lower() in EST_IMMAGINI_PDF
+                   and not f.name.startswith(".")), key=ordine_naturale)
+
+
+def pdf_a_jpg(pdf: Path, cartella: Path, dpi: int, qualita: int = 90) -> int:
+    """Salva ogni pagina del PDF come JPG nella cartella indicata."""
+    try:
+        documento = pdfium.PdfDocument(str(pdf))
+    except Exception as e:
+        if "password" in str(e).lower():
+            print("Errore: il PDF è protetto da password, non posso aprirlo.")
+        else:
+            print("Errore: non riesco ad aprire il PDF, forse è danneggiato.")
+        return 1
+    errori = 0
+    try:
+        totale = len(documento)
+        cifre = max(3, len(str(totale)))  # 001, 002... così restano in ordine
+        cartella.mkdir(parents=True, exist_ok=True)
+        print(f"\n--- PDF -> JPG: {totale} pagine ---")
+        for i in range(totale):
+            nome = f"{pdf.stem}_pagina_{i + 1:0{cifre}d}.jpg"
+            try:
+                pagina = documento[i]
+                immagine = pagina.render(scale=dpi / 72).to_pil().convert("RGB")
+                pagina.close()
+                immagine.save(cartella / nome, "JPEG", quality=qualita, dpi=(dpi, dpi))
+                print(f"[{i + 1}/{totale}] OK -> {nome}")
+            except Exception as e:
+                print(f"[{i + 1}/{totale}] ERRORE sulla pagina {i + 1}: {e}")
+                errori += 1
+    finally:
+        documento.close()
+    print(f"\nFatto. Pagine salvate: {totale - errori}  Errori: {errori}")
+    print(f"Cartella: {cartella}")
+    return 1 if errori else 0
+
+
+def dati_per_pdf(f: Path, ricomprimi: bool) -> bytes:
+    """I JPG vengono inseriti così come sono (nessuna perdita di qualità);
+    gli altri formati vengono prima convertiti in JPG."""
+    if f.suffix.lower() in (".jpg", ".jpeg") and not ricomprimi:
+        with Image.open(f) as prova:
+            prova.verify()  # controlla che non sia danneggiato
+        return f.read_bytes()
+    img, _ = apri_rgb(f)
+    memoria = io.BytesIO()
+    img.save(memoria, "JPEG", quality=95)
+    return memoria.getvalue()
+
+
+def jpg_a_pdf(cartella: Path, pdf: Path, pagina: str) -> int:
+    """Unisce tutte le immagini della cartella (in ordine di nome) in un PDF."""
+    files = immagini_in_cartella(cartella)
+    print(f"\n--- IMMAGINI -> PDF: {len(files)} immagini trovate ---")
+    if not files:
+        print("Nessuna immagine trovata nella cartella.")
+        return 1
+
+    dati, usati, errori = [], [], 0
+    for i, f in enumerate(files, 1):
+        try:
+            dati.append(dati_per_pdf(f, ricomprimi=False))
+            usati.append(f)
+            print(f"[{i}/{len(files)}] {f.name}")
+        except Exception:
+            print(f"[{i}/{len(files)}] ERRORE: {f.name} è danneggiato o non è un'immagine, la salto")
+            errori += 1
+    if not dati:
+        return 1
+
+    opzioni = {"rotation": img2pdf.Rotation.ifvalid}  # rispetta l'orientamento EXIF
+    if pagina == "a4":
+        opzioni["layout_fun"] = img2pdf.get_layout_fun(
+            PAGINA_A4, fit=img2pdf.FitMode.into, auto_orient=True)
+    pdf.parent.mkdir(parents=True, exist_ok=True)
+    temporaneo = pdf.with_name(pdf.stem + ".parziale.pdf")
+    try:
+        try:
+            contenuto = img2pdf.convert(dati, **opzioni)
+        except Exception:
+            # qualche JPG particolare: li riconverto tutti con Pillow e riprovo
+            dati = [dati_per_pdf(f, ricomprimi=True) for f in usati]
+            contenuto = img2pdf.convert(dati, **opzioni)
+        temporaneo.write_bytes(contenuto)
+        temporaneo.replace(pdf)
+    finally:
+        if temporaneo.exists():
+            temporaneo.unlink()
+
+    print(f"\nFatto. Pagine nel PDF: {len(dati)}  Immagini saltate: {errori}")
+    print(f"PDF creato: {pdf}")
+    return 1 if errori else 0
+
+
+def pdf_predefinito(cartella: Path) -> Path:
+    nome = cartella.resolve().name or "immagini"
+    return cartella / f"{nome}.pdf"
 
 
 # ---------------------------------------------------------------- video
@@ -445,7 +574,8 @@ def pulisci_percorso(testo: str) -> str:
 
 def chiedi_cartella(domanda: str, deve_esistere: bool,
                     estensioni_file: set | None = None,
-                    vuoto_corrente: bool = False) -> Path:
+                    vuoto_corrente: bool = False,
+                    predefinita: Path | None = None) -> Path:
     """Chiede una cartella. Se estensioni_file è indicato, accetta anche un
     singolo file con una di quelle estensioni. Con vuoto_corrente=True,
     premendo solo Invio si usa la cartella in cui è aperto il terminale."""
@@ -455,6 +585,8 @@ def chiedi_cartella(domanda: str, deve_esistere: bool,
             try:
                 cosa = "la cartella o il file" if accetta_file else "la cartella"
                 extra = "; Invio = cartella corrente" if vuoto_corrente else ""
+                if predefinita is not None:
+                    extra = f"; Invio = {predefinita}"
                 print(f"  (scrivi il percorso o trascina qui {cosa}; Tab completa il nome{extra})")
                 testo = questionary.path(
                     domanda, only_directories=not accetta_file, style=STILE, qmark="?"
@@ -466,6 +598,9 @@ def chiedi_cartella(domanda: str, deve_esistere: bool,
         else:
             testo = input(domanda + " ")
         testo = pulisci_percorso(testo)
+        if not testo and predefinita is not None:
+            print(f"  Uso: {predefinita}")
+            return predefinita
         if not testo and vuoto_corrente:
             print(f"  Uso la cartella corrente: {Path.cwd()}")
             return Path.cwd()
@@ -506,6 +641,76 @@ def chiedi_dove_salvare(origine: Path) -> tuple:
         if destinazione.resolve() != origine.resolve():
             return destinazione, False
         print("  È la stessa cartella di origine: scegli una delle opzioni \"stessa cartella\".\n")
+
+
+def chiedi_testo(domanda: str, predefinito: str) -> str:
+    if USA_FRECCE:
+        try:
+            return questionary.text(domanda, default=predefinito, style=STILE,
+                                    qmark="?").unsafe_ask().strip() or predefinito
+        except (KeyboardInterrupt, EOFError):
+            raise
+        except Exception:
+            pass
+    return input(f"{domanda} [{predefinito}]: ").strip() or predefinito
+
+
+def menu_pdf() -> None:
+    origine = chiedi_cartella(
+        "File PDF da trasformare in JPG, oppure cartella di immagini da unire in un PDF:",
+        deve_esistere=True, estensioni_file={".pdf"}, vuoto_corrente=True)
+
+    if origine.is_file():
+        destinazione = chiedi_cartella("Cartella dove salvare le pagine JPG:",
+                                       deve_esistere=False,
+                                       predefinita=origine.parent / origine.stem)
+        dpi = scegli("Risoluzione delle immagini:", [
+            (100, "Bassa   (100 dpi) - file piccoli"),
+            (150, "Media   (150 dpi) - per lo schermo"),
+            (200, "Alta    (200 dpi) - consigliata"),
+            (300, "Stampa  (300 dpi) - file più grandi"),
+        ], 200)
+        print("\nRiepilogo:")
+        print("  Operazione:    PDF -> JPG (una immagine per pagina)")
+        print(f"  PDF:           {origine}")
+        print(f"  Salva in:      {destinazione}")
+        print(f"  Risoluzione:   {dpi} dpi")
+        print(f"  Nomi:          {origine.stem}_pagina_001.jpg, ...\n")
+        if si_no("Avviare?", True):
+            pdf_a_jpg(origine, destinazione, dpi)
+        else:
+            print("Annullato.")
+        return
+
+    files = immagini_in_cartella(origine)
+    if not files:
+        print("  Nella cartella non ci sono immagini da unire.")
+        return
+    cartella_pdf = chiedi_cartella("Cartella dove salvare il PDF:", deve_esistere=False,
+                                   predefinita=origine)
+    nome = chiedi_testo("Nome del PDF:", pdf_predefinito(origine).name)
+    if not nome.lower().endswith(".pdf"):
+        nome += ".pdf"
+    pdf = cartella_pdf / nome
+    pagina = scegli("Formato delle pagine:", [
+        ("a4", "A4 - ogni immagine adattata al foglio (consigliato per stampare)"),
+        ("immagine", "Ogni pagina grande quanto la sua immagine"),
+    ], "a4")
+
+    print("\nRiepilogo:")
+    print("  Operazione:    immagini -> un unico PDF")
+    print(f"  Cartella:      {origine}  ({len(files)} immagini)")
+    elenco = ", ".join(f.name for f in files[:3]) + (", ..." if len(files) > 3 else "")
+    print(f"  Ordine:        {elenco}  (per nome)")
+    print(f"  PDF:           {pdf}")
+    print(f"  Pagine:        {'A4' if pagina == 'a4' else 'grandi quanto le immagini'}")
+    if pdf.exists():
+        print("\n  ⚠  Esiste già un file con questo nome: verrà SOVRASCRITTO.")
+    print()
+    if si_no("Avviare?", True):
+        jpg_a_pdf(origine, pdf, pagina)
+    else:
+        print("Annullato.")
 
 
 def menu_mescola() -> None:
@@ -551,13 +756,14 @@ def modalita_interattiva() -> int:
             ("iphone", STRUMENTI["iphone"]),
             ("foto", STRUMENTI["foto"]),
             ("video", STRUMENTI["video"]),
+            ("pdf", STRUMENTI["pdf"]),
             ("mescola", STRUMENTI["mescola"]),
             (None, "Esci"),
         ], "iphone")
         if strumento is None:
             return 0
-        if strumento == "mescola":
-            menu_mescola()
+        if strumento in ("mescola", "pdf"):
+            menu_mescola() if strumento == "mescola" else menu_pdf()
             print()
             if not si_no("Vuoi fare un'altra operazione?", False):
                 return 0
@@ -669,6 +875,29 @@ def modalita_interattiva() -> int:
 
 # ---------------------------------------------------------------- avvio
 
+def comando_pdf(args) -> int:
+    if args.origine.is_file():
+        if args.origine.suffix.lower() != ".pdf":
+            print("Errore: per lo strumento pdf indica un file PDF oppure una cartella di immagini.")
+            return 1
+        if not 30 <= args.dpi <= 1200:
+            print("Errore: --dpi deve essere tra 30 e 1200.")
+            return 1
+        cartella = args.destinazione or args.origine.parent / args.origine.stem
+        return pdf_a_jpg(args.origine, cartella, args.dpi,
+                         args.qualita if 1 <= args.qualita <= 100 else 90)
+    if not args.origine.is_dir():
+        print(f"Errore: '{args.origine}' non esiste.")
+        return 1
+    if args.destinazione is None:
+        pdf = pdf_predefinito(args.origine)
+    elif args.destinazione.suffix.lower() == ".pdf":
+        pdf = args.destinazione
+    else:
+        pdf = args.destinazione / pdf_predefinito(args.origine).name
+    return jpg_a_pdf(args.origine, pdf, args.pagina)
+
+
 def main() -> int:
     if len(sys.argv) == 1:
         try:
@@ -683,7 +912,7 @@ def main() -> int:
     p.add_argument("destinazione", type=Path, nargs="?",
                    help="Cartella dove salvare i file convertiti")
     p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
-                   help="iphone (default), foto, video o mescola")
+                   help="iphone (default), foto, video, pdf o mescola")
     p.add_argument("--sostituisci", action="store_true",
                    help="salva nella cartella di origine ed ELIMINA gli originali convertiti")
     p.add_argument("--rinomina", action="store_true",
@@ -692,9 +921,20 @@ def main() -> int:
                    help="solo per lo strumento iphone (default tutto)")
     p.add_argument("--qualita", type=int, default=90, help="Qualità JPG 1-100 (default 90)")
     p.add_argument("--qualita-video", choices=list(QUALITA_VIDEO), default="media")
+    p.add_argument("--dpi", type=int, default=200,
+                   help="solo per pdf: risoluzione delle pagine JPG (default 200)")
+    p.add_argument("--pagina", choices=["a4", "immagine"], default="a4",
+                   help="solo per pdf: formato delle pagine del PDF creato (default a4)")
     p.add_argument("--ricorsivo", action="store_true", help="Cerca anche nelle sottocartelle")
     p.add_argument("--sovrascrivi", action="store_true", help="Riconverte i file già presenti")
     args = p.parse_args()
+
+    if args.strumento == "pdf":
+        try:
+            return comando_pdf(args)
+        except KeyboardInterrupt:
+            print("\nInterrotto.")
+            return 1
 
     if args.origine.is_file():
         if args.strumento == "mescola":

@@ -2,3 +2,5 @@ pillow
 pillow-heif
 imageio-ffmpeg
 questionary
+pypdfium2
+img2pdf
