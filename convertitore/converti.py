@@ -540,12 +540,16 @@ def scegli(domanda: str, opzioni: list, default=None):
     global USA_FRECCE
     if USA_FRECCE:
         try:
-            scelte = [Choice(testo, value=valore) for valore, testo in opzioni]
-            iniziale = next((c for c in scelte if c.value == default), None)
-            return questionary.select(
+            # Ogni voce è identificata dalla sua posizione: così anche un valore
+            # come None ("Esci") viene restituito correttamente.
+            scelte = [Choice(testo, value=i) for i, (_, testo) in enumerate(opzioni)]
+            iniziale = next((scelte[i] for i, (v, _) in enumerate(opzioni)
+                             if v == default), None)
+            indice = questionary.select(
                 domanda, choices=scelte, default=iniziale, style=STILE,
                 qmark="?", pointer="❯",
                 instruction="(usa le frecce ↑ ↓ e premi Invio)").unsafe_ask()
+            return opzioni[indice][0]
         except (KeyboardInterrupt, EOFError):
             raise
         except Exception:
