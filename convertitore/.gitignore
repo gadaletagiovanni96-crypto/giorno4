@@ -1,2 +1,4 @@
 __pycache__/
 *.parziale.mp4
+build/
+*.egg-info/
