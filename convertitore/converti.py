@@ -11,6 +11,8 @@ Uso:
     python converti.py                         (menu con le frecce)
     python converti.py ORIGINE DESTINAZIONE --strumento iphone|foto|video|mescola [opzioni]
     python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
+    python converti.py FILE --strumento foto|video|iphone        (un solo file: lo
+                                     converte sul posto, sostituendo l'originale)
 """
 import argparse
 import random
@@ -169,6 +171,32 @@ def trova_file(cartella: Path, estensioni: set, ricorsivo: bool) -> list:
                   and ".parziale." not in f.name)
 
 
+def estensioni_strumento(strumento: str) -> set:
+    return {"iphone": EST_FOTO_IPHONE | EST_VIDEO_IPHONE,
+            "foto": EST_FOTO_TUTTE,
+            "video": EST_VIDEO_TUTTE}[strumento]
+
+
+def elenca_file(args, estensioni: set) -> list:
+    """Un solo file se l'utente ha indicato un file, altrimenti la cartella."""
+    singolo = getattr(args, "file", None)
+    if singolo is not None:
+        return [singolo] if singolo.suffix.lower() in estensioni else []
+    return trova_file(args.origine, estensioni, args.ricorsivo)
+
+
+def prepara_file_singolo(args) -> None:
+    """Un solo file: si converte nella sua cartella, con lo stesso nome,
+    sostituendo l'originale (e un eventuale file convertito già presente)."""
+    args.file = args.origine
+    args.origine = args.destinazione = args.file.parent
+    args.sostituisci = True
+    args.sovrascrivi = True
+    args.ricorsivo = False
+    if args.strumento == "iphone":
+        args.tipo = "foto" if args.file.suffix.lower() in EST_FOTO_IPHONE else "video"
+
+
 def mappa_uscite(files: list, args, estensione: str) -> list:
     """Abbina a ogni file il percorso di uscita. Se due file hanno lo stesso
     nome (es. foto.png e foto.webp) aggiunge il formato: foto_png.jpg."""
@@ -204,7 +232,7 @@ def elimina_originale(f: Path, out: Path, args) -> str:
 
 
 def elabora_foto(args, estensioni: set) -> list:
-    files = trova_file(args.origine, estensioni, args.ricorsivo)
+    files = elenca_file(args, estensioni)
     print(f"\n--- FOTO: {len(files)} file trovati ---")
     conteggio = [0, 0, 0]  # convertiti, saltati, errori
     for i, (f, out) in enumerate(mappa_uscite(files, args, ".jpg"), 1):
@@ -228,7 +256,7 @@ def elabora_foto(args, estensioni: set) -> list:
 
 
 def elabora_video(args, estensioni: set, solo_hevc: bool) -> list:
-    files = trova_file(args.origine, estensioni, args.ricorsivo)
+    files = elenca_file(args, estensioni)
     print(f"\n--- VIDEO: {len(files)} file trovati ---")
     crf = QUALITA_VIDEO[args.qualita_video]
     conteggio = [0, 0, 0]
@@ -415,13 +443,18 @@ def pulisci_percorso(testo: str) -> str:
     return testo.strip().strip('"').strip("'").strip()
 
 
-def chiedi_cartella(domanda: str, deve_esistere: bool) -> Path:
+def chiedi_cartella(domanda: str, deve_esistere: bool,
+                    estensioni_file: set | None = None) -> Path:
+    """Chiede una cartella. Se estensioni_file è indicato, accetta anche un
+    singolo file con una di quelle estensioni."""
+    accetta_file = estensioni_file is not None
     while True:
         if USA_FRECCE:
             try:
-                print("  (scrivi il percorso o trascina qui la cartella; Tab completa il nome)")
+                cosa = "la cartella o il file" if accetta_file else "la cartella"
+                print(f"  (scrivi il percorso o trascina qui {cosa}; Tab completa il nome)")
                 testo = questionary.path(
-                    domanda, only_directories=True, style=STILE, qmark="?"
+                    domanda, only_directories=not accetta_file, style=STILE, qmark="?"
                 ).unsafe_ask()
             except (KeyboardInterrupt, EOFError):
                 raise
@@ -434,6 +467,11 @@ def chiedi_cartella(domanda: str, deve_esistere: bool) -> Path:
             print("  Scrivi un percorso (puoi anche trascinare qui la cartella).")
             continue
         cartella = Path(testo).expanduser()
+        if accetta_file and cartella.is_file():
+            if cartella.suffix.lower() in estensioni_file:
+                return cartella
+            print(f"  Questo strumento non converte i file '{cartella.suffix}', riprova.")
+            continue
         if deve_esistere and not cartella.is_dir():
             print(f"  La cartella '{cartella}' non esiste, riprova.")
             continue
@@ -518,19 +556,31 @@ def modalita_interattiva() -> int:
                 return 0
             continue
 
+        origine = chiedi_cartella("Cartella di ORIGINE (o una singola foto/video):",
+                                  deve_esistere=True,
+                                  estensioni_file=estensioni_strumento(strumento))
+        singolo = origine.is_file()
+
         tipo = "tutto"
         if strumento == "iphone":
-            tipo = scegli("Cosa vuoi convertire?", [
-                ("tutto", "Foto e video"),
-                ("foto", "Solo foto  (HEIC -> JPG)"),
-                ("video", "Solo video (HEVC -> MP4)"),
-            ], "tutto")
+            if singolo:
+                tipo = "foto" if origine.suffix.lower() in EST_FOTO_IPHONE else "video"
+            else:
+                tipo = scegli("Cosa vuoi convertire?", [
+                    ("tutto", "Foto e video"),
+                    ("foto", "Solo foto  (HEIC -> JPG)"),
+                    ("video", "Solo video (HEVC -> MP4)"),
+                ], "tutto")
+        if singolo and strumento in ("foto", "video"):
+            tipo = strumento
 
         fa_foto = strumento == "foto" or (strumento == "iphone" and tipo != "video")
         fa_video = strumento == "video" or (strumento == "iphone" and tipo != "foto")
 
-        origine = chiedi_cartella("Cartella di ORIGINE:", deve_esistere=True)
-        destinazione, sostituisci = chiedi_dove_salvare(origine)
+        if singolo:
+            destinazione, sostituisci = origine.parent, True
+        else:
+            destinazione, sostituisci = chiedi_dove_salvare(origine)
 
         qualita, qualita_video = 90, "media"
         if fa_foto:
@@ -546,11 +596,40 @@ def modalita_interattiva() -> int:
                 ("media", "Media  - consigliata"),
                 ("bassa", "Bassa  - file più piccoli"),
             ], "media")
-        ricorsivo = si_no("Includere le sottocartelle?", False)
-        sovrascrivi = si_no("Sovrascrivere i file già convertiti?", False)
+        ricorsivo = sovrascrivi = False
+        if not singolo:
+            ricorsivo = si_no("Includere le sottocartelle?", False)
+            sovrascrivi = si_no("Sovrascrivere i file già convertiti?", False)
+
+        argomenti = argparse.Namespace(
+            strumento=strumento, tipo=tipo,
+            origine=origine, destinazione=destinazione,
+            qualita=qualita, qualita_video=qualita_video,
+            ricorsivo=ricorsivo, sovrascrivi=sovrascrivi,
+            sostituisci=sostituisci)
 
         print("\nRiepilogo:")
         print(f"  Strumento:     {STRUMENTI[strumento]}")
+        if singolo:
+            nuovo = origine.with_suffix(".jpg" if fa_foto else ".mp4").name
+            print(f"  File:          {origine}")
+            print(f"  Diventa:       {nuovo}  (nella stessa cartella)")
+            if fa_foto:
+                print(f"  Qualità foto:  {qualita}")
+            else:
+                print(f"  Qualità video: {qualita_video}")
+            print("\n  ⚠  Il file originale verrà SOVRASCRITTO (eliminato e sostituito).")
+            print()
+            if si_no("Avviare la conversione?", True):
+                prepara_file_singolo(argomenti)
+                converti(argomenti)
+            else:
+                print("Annullato.")
+            print()
+            if not si_no("Vuoi fare un'altra operazione?", False):
+                return 0
+            continue
+
         if strumento == "iphone":
             print(f"  Cosa:          {'foto e video' if tipo == 'tutto' else 'solo ' + tipo}")
         print(f"  Origine:       {origine}")
@@ -571,12 +650,7 @@ def modalita_interattiva() -> int:
         print()
 
         if si_no("Avviare la conversione?", True):
-            converti(argparse.Namespace(
-                strumento=strumento, tipo=tipo,
-                origine=origine, destinazione=destinazione,
-                qualita=qualita, qualita_video=qualita_video,
-                ricorsivo=ricorsivo, sovrascrivi=sovrascrivi,
-                sostituisci=sostituisci))
+            converti(argomenti)
         else:
             print("Annullato.")
 
@@ -596,7 +670,8 @@ def main() -> int:
             return 1
 
     p = argparse.ArgumentParser(description="Converte foto in JPG e video in MP4.")
-    p.add_argument("origine", type=Path, help="Cartella con i file da convertire")
+    p.add_argument("origine", type=Path,
+                   help="Cartella con i file da convertire, oppure un singolo file")
     p.add_argument("destinazione", type=Path, nargs="?",
                    help="Cartella dove salvare i file convertiti")
     p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
@@ -612,6 +687,30 @@ def main() -> int:
     p.add_argument("--ricorsivo", action="store_true", help="Cerca anche nelle sottocartelle")
     p.add_argument("--sovrascrivi", action="store_true", help="Riconverte i file già presenti")
     args = p.parse_args()
+
+    if args.origine.is_file():
+        if args.strumento == "mescola":
+            print("Errore: mescola funziona solo con una cartella.")
+            return 1
+        if args.origine.suffix.lower() not in estensioni_strumento(args.strumento):
+            print(f"Errore: lo strumento '{args.strumento}' non converte i file "
+                  f"'{args.origine.suffix}'.")
+            return 1
+        if args.destinazione is not None and \
+                args.destinazione.resolve() != args.origine.parent.resolve():
+            print("Errore: con un singolo file la conversione avviene nella sua cartella; "
+                  "non indicare una destinazione.")
+            return 1
+        if not 1 <= args.qualita <= 100:
+            print("Errore: --qualita deve essere tra 1 e 100.")
+            return 1
+        print("ATTENZIONE: il file originale verrà SOVRASCRITTO (eliminato e sostituito).")
+        prepara_file_singolo(args)
+        try:
+            return converti(args)
+        except KeyboardInterrupt:
+            print("\nInterrotto.")
+            return 1
 
     if not args.origine.is_dir():
         print(f"Errore: la cartella '{args.origine}' non esiste.")
