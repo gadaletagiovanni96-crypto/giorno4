@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Convertitore di foto e video con cinque strumenti:
+"""Convertitore di foto e video con sei strumenti:
 
   1. iPhone        foto HEIC -> JPG e video HEVC -> MP4
   2. Foto -> JPG   qualsiasi foto (PNG, WEBP, HEIC, TIFF, BMP, GIF, AVIF...) in JPG
   3. Video -> MP4  qualsiasi video (MOV, AVI, MKV, WMV, WEBM...) in MP4
   4. PDF <-> JPG   un PDF diventa una serie di JPG (una per pagina),
                    una cartella di immagini diventa un unico PDF
-  5. Mescola       mette un numero casuale davanti al nome dei file,
+  5. PDF A4 orizzontale
+                   ogni pagina del PDF viene messa nella metà sinistra di una
+                   pagina A4 orizzontale; la metà destra resta vuota
+  6. Mescola       mette un numero casuale davanti al nome dei file,
                    così ordinandoli per nome risultano in ordine casuale
 
 Uso (dopo "py -m pip install ." basta scrivere "converti" in qualsiasi cartella):
@@ -15,6 +18,7 @@ Uso (dopo "py -m pip install ." basta scrivere "converti" in qualsiasi cartella)
     python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
     python converti.py FILE.pdf [CARTELLA] --strumento pdf      (pagine -> JPG)
     python converti.py CARTELLA [FILE.pdf] --strumento pdf      (immagini -> PDF)
+    python converti.py FILE.pdf|CARTELLA [DESTINAZIONE] --strumento orizzontale
     python converti.py FILE --strumento foto|video|iphone        (un solo file: lo
                                      converte sul posto, sostituendo l'originale)
 """
@@ -33,6 +37,7 @@ try:
     import imageio_ffmpeg
     import img2pdf
     import pypdfium2 as pdfium
+    import pikepdf
 except ImportError:
     sys.exit("Librerie mancanti. Esegui prima:  py -m pip install -r requirements.txt")
 
@@ -60,6 +65,7 @@ STRUMENTI = {
     "foto": "Qualsiasi foto -> JPG",
     "video": "Qualsiasi video -> MP4",
     "pdf": "PDF <-> JPG: pagine del PDF in JPG, oppure immagini unite in un PDF",
+    "orizzontale": "PDF A4 orizzontale: pagine nella metà sinistra, destra vuota",
     "mescola": "Mescola: numero casuale davanti al nome dei file",
 }
 
@@ -212,6 +218,69 @@ def jpg_a_pdf(cartella: Path, pdf: Path, pagina: str) -> int:
 def pdf_predefinito(cartella: Path) -> Path:
     nome = cartella.resolve().name or "immagini"
     return cartella / f"{nome}.pdf"
+
+
+# ---------------------------------------------------------------- PDF orizzontale
+
+A4_ORIZZONTALE = (img2pdf.mm_to_pt(297), img2pdf.mm_to_pt(210))
+SUFFISSO_ORIZZONTALE = "_orizzontale"
+
+
+def pdf_a_meta_sinistra(sorgente: Path, destinazione: Path) -> int:
+    """Crea un PDF A4 orizzontale: ogni pagina originale occupa la metà
+    sinistra (ridotta in proporzione, testo e grafica restano vettoriali),
+    la metà destra resta bianca. Restituisce il numero di pagine."""
+    larghezza, altezza = A4_ORIZZONTALE
+    meta_sinistra = pikepdf.Rectangle(0, 0, larghezza / 2, altezza)
+    destinazione.parent.mkdir(parents=True, exist_ok=True)
+    temporaneo = destinazione.with_name(destinazione.stem + ".parziale.pdf")
+    try:
+        with pikepdf.open(sorgente) as originale, pikepdf.new() as nuovo:
+            for pagina in originale.pages:
+                foglio = nuovo.add_blank_page(page_size=A4_ORIZZONTALE)
+                foglio.add_overlay(pagina, meta_sinistra)
+            nuovo.save(temporaneo)
+            pagine = len(nuovo.pages)
+        temporaneo.replace(destinazione)
+        return pagine
+    finally:
+        if temporaneo.exists():
+            temporaneo.unlink()
+
+
+def pdf_da_orizzontalizzare(origine: Path) -> list:
+    if origine.is_file():
+        return [origine]
+    return sorted((f for f in origine.iterdir()
+                   if f.is_file() and f.suffix.lower() == ".pdf"
+                   and not f.stem.endswith(SUFFISSO_ORIZZONTALE)
+                   and ".parziale." not in f.name and not f.name.startswith(".")),
+                  key=ordine_naturale)
+
+
+def uscita_orizzontale(f: Path, cartella: Path) -> Path:
+    return cartella / f"{f.stem}{SUFFISSO_ORIZZONTALE}.pdf"
+
+
+def orizzontalizza(files: list, uscite: list) -> int:
+    print(f"\n--- PDF A4 ORIZZONTALE: {len(files)} file ---")
+    ok = errori = 0
+    for i, (f, out) in enumerate(zip(files, uscite), 1):
+        try:
+            pagine = pdf_a_meta_sinistra(f, out)
+            print(f"[{i}/{len(files)}] OK: {f.name} -> {out.name}  ({pagine} pagine)")
+            ok += 1
+        except pikepdf.PasswordError:
+            print(f"[{i}/{len(files)}] ERRORE: {f.name} è protetto da password")
+            errori += 1
+        except pikepdf.PdfError:
+            print(f"[{i}/{len(files)}] ERRORE: {f.name} è danneggiato o non è un PDF")
+            errori += 1
+        except Exception as e:
+            print(f"[{i}/{len(files)}] ERRORE su {f.name}: {e}")
+            errori += 1
+    print(f"\nFatto. PDF creati: {ok}  Errori: {errori}")
+    return 1 if errori else 0
 
 
 # ---------------------------------------------------------------- video
@@ -717,6 +786,43 @@ def menu_pdf() -> None:
         print("Annullato.")
 
 
+def menu_orizzontale() -> None:
+    origine = chiedi_cartella(
+        "File PDF da trasformare, oppure cartella con più PDF:",
+        deve_esistere=True, estensioni_file={".pdf"}, vuoto_corrente=True)
+    files = pdf_da_orizzontalizzare(origine)
+    if not files:
+        print("  Nella cartella non ci sono PDF.")
+        return
+    cartella_base = origine.parent if origine.is_file() else origine
+    destinazione = chiedi_cartella("Cartella dove salvare i nuovi PDF:",
+                                   deve_esistere=False, predefinita=cartella_base)
+    uscite = [uscita_orizzontale(f, destinazione) for f in files]
+
+    print("\nRiepilogo:")
+    print("  Operazione:    pagine nella metà sinistra di un A4 orizzontale")
+    if origine.is_file():
+        print(f"  PDF:           {origine}")
+        print(f"  Nuovo PDF:     {uscite[0]}")
+    else:
+        print(f"  Cartella:      {origine}  ({len(files)} PDF)")
+        print(f"  Salva in:      {destinazione}")
+        print(f"  Nomi:          {uscite[0].name}, ...")
+    print("  Gli originali restano come sono.")
+    esistenti = [u for u in uscite if u.exists()]
+    if esistenti:
+        if len(esistenti) == 1:
+            print(f"\n  ⚠  {esistenti[0].name} esiste già e verrà SOVRASCRITTO.")
+        else:
+            print(f"\n  ⚠  {len(esistenti)} file con lo stesso nome esistono già "
+                  "e verranno SOVRASCRITTI.")
+    print()
+    if si_no("Avviare?", True):
+        orizzontalizza(files, uscite)
+    else:
+        print("Annullato.")
+
+
 def menu_mescola() -> None:
     origine = chiedi_cartella("Cartella con i file da mescolare:", deve_esistere=True,
                               vuoto_corrente=True)
@@ -761,13 +867,15 @@ def modalita_interattiva() -> int:
             ("foto", STRUMENTI["foto"]),
             ("video", STRUMENTI["video"]),
             ("pdf", STRUMENTI["pdf"]),
+            ("orizzontale", STRUMENTI["orizzontale"]),
             ("mescola", STRUMENTI["mescola"]),
             (None, "Esci"),
         ], "iphone")
         if strumento is None:
             return 0
-        if strumento in ("mescola", "pdf"):
-            menu_mescola() if strumento == "mescola" else menu_pdf()
+        if strumento in ("mescola", "pdf", "orizzontale"):
+            {"mescola": menu_mescola, "pdf": menu_pdf,
+             "orizzontale": menu_orizzontale}[strumento]()
             print()
             if not si_no("Vuoi fare un'altra operazione?", False):
                 return 0
@@ -879,6 +987,27 @@ def modalita_interattiva() -> int:
 
 # ---------------------------------------------------------------- avvio
 
+def comando_orizzontale(args) -> int:
+    if args.origine.is_file() and args.origine.suffix.lower() != ".pdf":
+        print("Errore: indica un file PDF oppure una cartella con dei PDF.")
+        return 1
+    if not args.origine.exists():
+        print(f"Errore: '{args.origine}' non esiste.")
+        return 1
+    files = pdf_da_orizzontalizzare(args.origine)
+    if not files:
+        print("Nessun PDF trovato.")
+        return 1
+    base = args.origine.parent if args.origine.is_file() else args.origine
+    if args.origine.is_file() and args.destinazione is not None \
+            and args.destinazione.suffix.lower() == ".pdf":
+        uscite = [args.destinazione]
+    else:
+        cartella = args.destinazione or base
+        uscite = [uscita_orizzontale(f, cartella) for f in files]
+    return orizzontalizza(files, uscite)
+
+
 def comando_pdf(args) -> int:
     if args.origine.is_file():
         if args.origine.suffix.lower() != ".pdf":
@@ -916,7 +1045,7 @@ def main() -> int:
     p.add_argument("destinazione", type=Path, nargs="?",
                    help="Cartella dove salvare i file convertiti")
     p.add_argument("--strumento", choices=list(STRUMENTI), default="iphone",
-                   help="iphone (default), foto, video, pdf o mescola")
+                   help="iphone (default), foto, video, pdf, orizzontale o mescola")
     p.add_argument("--sostituisci", action="store_true",
                    help="salva nella cartella di origine ed ELIMINA gli originali convertiti")
     p.add_argument("--rinomina", action="store_true",
@@ -933,9 +1062,9 @@ def main() -> int:
     p.add_argument("--sovrascrivi", action="store_true", help="Riconverte i file già presenti")
     args = p.parse_args()
 
-    if args.strumento == "pdf":
+    if args.strumento in ("pdf", "orizzontale"):
         try:
-            return comando_pdf(args)
+            return comando_pdf(args) if args.strumento == "pdf" else comando_orizzontale(args)
         except KeyboardInterrupt:
             print("\nInterrotto.")
             return 1
