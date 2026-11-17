@@ -1,6 +1,6 @@
 # Strumenti per foto e video
 
-Programma da terminale con **cinque strumenti**, scelti da un menu che si usa con le **frecce ↑ ↓** e **Invio**:
+Programma da terminale con **sei strumenti**, scelti da un menu che si usa con le **frecce ↑ ↓** e **Invio**:
 
 | Strumento | Cosa fa |
 |-----------|---------|
@@ -8,6 +8,7 @@ Programma da terminale con **cinque strumenti**, scelti da un menu che si usa co
 | **Qualsiasi foto → JPG** | PNG, WEBP, HEIC, AVIF, TIFF, BMP, GIF, PSD, ICO, TGA… → `.jpg` |
 | **Qualsiasi video → MP4** | MOV, AVI, MKV, WMV, WEBM, FLV, 3GP, MPG, TS… → `.mp4` |
 | **PDF ↔ JPG** | un PDF diventa tante immagini `.jpg` (una per pagina); una cartella di immagini diventa un unico `.pdf` |
+| **PDF A4 orizzontale** | ogni pagina del PDF finisce nella **metà sinistra** di una pagina A4 orizzontale; la metà destra resta vuota |
 | **Mescola** | mette un numero casuale davanti al nome dei file (`foto.jpg` → `042_foto.jpg`), così ordinandoli per nome sono in ordine casuale |
 
 Dettagli:
@@ -56,6 +57,22 @@ per un ordine casuale usa prima lo strumento **Mescola**.
 
 I PDF protetti da password non possono essere aperti.
 
+### PDF A4 orizzontale
+
+Prende un PDF (pensato per A4 verticale) e ne crea uno nuovo in **A4 orizzontale**:
+ogni pagina originale viene messa nella **metà sinistra** del foglio e la **metà destra
+resta vuota** (utile per appunti, correzioni, traduzioni a fianco…).
+
+- Una pagina A4 verticale occupa esattamente la metà sinistra (ridotta in formato A5).
+  Pagine di altre misure vengono ridotte in proporzione e centrate nella metà sinistra.
+- Testo e grafica **restano vettoriali**: niente perdita di qualità e il testo resta
+  selezionabile e ricercabile.
+- Il nuovo file si chiama come l'originale più `_orizzontale` (es. `tesi.pdf` →
+  `tesi_orizzontale.pdf`); **l'originale non viene toccato**.
+- Puoi indicare un solo PDF oppure una **cartella**: in quel caso trasforma tutti i PDF
+  che contiene (saltando quelli già `_orizzontale`).
+- I PDF protetti da password o danneggiati vengono segnalati e saltati.
+
 ### Mescola
 
 - Funziona con **qualsiasi tipo di file** della cartella (non entra nelle sottocartelle;
@@ -93,8 +110,15 @@ premi solo **Invio** per usare la cartella in cui ti trovi.
 - Se Windows risponde che `converti` non è riconosciuto, usa `py -m converti`
   (funziona allo stesso modo da qualsiasi cartella), oppure reinstalla Python
   spuntando "Add python.exe to PATH".
-- **Per aggiornare** a una nuova versione: scarica il nuovo ZIP ed esegui di nuovo
-  `py -m pip install .` nella cartella `convertitore`.
+- **Per aggiornare** a una nuova versione basta un comando, da qualsiasi cartella
+  (scarica l'ultima versione da GitHub e la installa al posto della vecchia):
+
+  ```
+  py -m pip install --upgrade "https://github.com/gadaletagiovanni96-crypto/giorno4/archive/refs/heads/main.zip#subdirectory=convertitore"
+  ```
+
+  In alternativa: scarica il nuovo ZIP ed esegui di nuovo `py -m pip install .`
+  nella cartella `convertitore`.
 - Per disinstallare: `py -m pip uninstall convertitore`.
 - Puoi sempre avviarlo anche senza installarlo, dalla sua cartella, con `py converti.py`
   (in quel caso servono le librerie: `py -m pip install -r requirements.txt`).
@@ -136,11 +160,13 @@ converti .                                             (la cartella in cui ti tr
 converti "C:\Documenti\fattura.pdf" --strumento pdf          (pagine -> JPG)
 converti "C:\Foto\Vacanze" --strumento pdf                   (immagini -> Vacanze.pdf)
 converti "C:\Foto\Vacanze" "C:\album.pdf" --strumento pdf --pagina immagine
+converti "C:\Documenti\tesi.pdf" --strumento orizzontale    (crea tesi_orizzontale.pdf)
+converti "C:\Documenti" --strumento orizzontale              (tutti i PDF della cartella)
 ```
 
 | Opzione                         | Effetto                                              |
 |---------------------------------|------------------------------------------------------|
-| `--strumento iphone/foto/video/pdf/mescola` | Quale strumento usare (default `iphone`)     |
+| `--strumento iphone/foto/video/pdf/orizzontale/mescola` | Quale strumento usare (default `iphone`)     |
 | `--tipo foto/video/tutto`       | Solo per `iphone`: cosa convertire (default `tutto`) |
 | `--qualita 95`                  | Qualità JPG da 1 a 100 (default 90)                  |
 | `--qualita-video alta`          | `alta`, `media` (default) o `bassa`                  |

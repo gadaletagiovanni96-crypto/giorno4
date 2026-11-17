@@ -4,3 +4,4 @@ imageio-ffmpeg
 questionary
 pypdfium2
 img2pdf
+pikepdf
