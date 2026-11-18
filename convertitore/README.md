@@ -7,7 +7,7 @@ Programma da terminale con **sei strumenti**, scelti da un menu che si usa con l
 | **iPhone** | foto `.heic` → `.jpg` e video HEVC → `.mp4` (gli altri video vengono saltati) |
 | **Qualsiasi foto → JPG** | PNG, WEBP, HEIC, AVIF, TIFF, BMP, GIF, PSD, ICO, TGA… → `.jpg` |
 | **Qualsiasi video → MP4** | MOV, AVI, MKV, WMV, WEBM, FLV, 3GP, MPG, TS… → `.mp4` |
-| **PDF ↔ JPG** | un PDF diventa tante immagini `.jpg` (una per pagina); una cartella di immagini diventa un unico `.pdf` |
+| **PDF ↔ JPG** | un PDF diventa tante immagini `.jpg` (una per pagina); un'immagine o una cartella di immagini diventa un `.pdf` |
 | **PDF A4 orizzontale** | ogni pagina del PDF finisce nella **metà sinistra** di una pagina A4 orizzontale; la metà destra resta vuota |
 | **Mescola** | mette un numero casuale davanti al nome dei file (`foto.jpg` → `042_foto.jpg`), così ordinandoli per nome sono in ordine casuale |
 
@@ -51,6 +51,9 @@ Lo strumento capisce da solo cosa fare in base a cosa gli dai:
     **grandi quanto l'immagine**.
   - Il PDF viene salvato (premendo Invio) nella stessa cartella con il nome della cartella,
     es. `Vacanze/Vacanze.pdf`; puoi cambiare cartella e nome.
+- **una singola immagine** → la trasforma in un PDF di una pagina, con lo stesso nome
+  e (premendo Invio) nella stessa cartella: `foto.jpg` → `foto.pdf`.
+  L'immagine originale non viene toccata.
 
 Suggerimento: per decidere l'ordine delle pagine, rinomina le immagini (`01`, `02`…);
 per un ordine casuale usa prima lo strumento **Mescola**.
@@ -159,6 +162,7 @@ converti "C:\Video\vacanza.avi" --strumento video     (un solo file, sul posto)
 converti .                                             (la cartella in cui ti trovi)
 converti "C:\Documenti\fattura.pdf" --strumento pdf          (pagine -> JPG)
 converti "C:\Foto\Vacanze" --strumento pdf                   (immagini -> Vacanze.pdf)
+converti "C:\Foto\ricevuta.jpg" --strumento pdf              (crea ricevuta.pdf)
 converti "C:\Foto\Vacanze" "C:\album.pdf" --strumento pdf --pagina immagine
 converti "C:\Documenti\tesi.pdf" --strumento orizzontale    (crea tesi_orizzontale.pdf)
 converti "C:\Documenti" --strumento orizzontale              (tutti i PDF della cartella)
