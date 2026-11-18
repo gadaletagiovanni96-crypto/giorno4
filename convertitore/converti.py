@@ -18,6 +18,7 @@ Uso (dopo "py -m pip install ." basta scrivere "converti" in qualsiasi cartella)
     python converti.py ORIGINE --strumento mescola --rinomina   (rinomina sul posto)
     python converti.py FILE.pdf [CARTELLA] --strumento pdf      (pagine -> JPG)
     python converti.py CARTELLA [FILE.pdf] --strumento pdf      (immagini -> PDF)
+    python converti.py FOTO.jpg [FILE.pdf] --strumento pdf      (una immagine -> PDF)
     python converti.py FILE.pdf|CARTELLA [DESTINAZIONE] --strumento orizzontale
     python converti.py FILE --strumento foto|video|iphone        (un solo file: lo
                                      converte sul posto, sostituendo l'originale)
@@ -171,9 +172,10 @@ def dati_per_pdf(f: Path, ricomprimi: bool) -> bytes:
     return memoria.getvalue()
 
 
-def jpg_a_pdf(cartella: Path, pdf: Path, pagina: str) -> int:
-    """Unisce tutte le immagini della cartella (in ordine di nome) in un PDF."""
-    files = immagini_in_cartella(cartella)
+def jpg_a_pdf(origine: Path, pdf: Path, pagina: str) -> int:
+    """Unisce tutte le immagini della cartella (in ordine di nome) in un PDF.
+    Se origine è una singola immagine, crea un PDF di una pagina."""
+    files = [origine] if origine.is_file() else immagini_in_cartella(origine)
     print(f"\n--- IMMAGINI -> PDF: {len(files)} immagini trovate ---")
     if not files:
         print("Nessuna immagine trovata nella cartella.")
@@ -215,9 +217,13 @@ def jpg_a_pdf(cartella: Path, pdf: Path, pagina: str) -> int:
     return 1 if errori else 0
 
 
-def pdf_predefinito(cartella: Path) -> Path:
-    nome = cartella.resolve().name or "immagini"
-    return cartella / f"{nome}.pdf"
+def pdf_predefinito(origine: Path) -> Path:
+    """Immagine singola: foto.jpg -> foto.pdf accanto.
+    Cartella: Vacanze -> Vacanze/Vacanze.pdf."""
+    if origine.is_file():
+        return origine.with_suffix(".pdf")
+    nome = origine.resolve().name or "immagini"
+    return origine / f"{nome}.pdf"
 
 
 # ---------------------------------------------------------------- PDF orizzontale
@@ -730,10 +736,11 @@ def chiedi_testo(domanda: str, predefinito: str) -> str:
 
 def menu_pdf() -> None:
     origine = chiedi_cartella(
-        "File PDF da trasformare in JPG, oppure cartella di immagini da unire in un PDF:",
-        deve_esistere=True, estensioni_file={".pdf"}, vuoto_corrente=True)
+        "PDF da trasformare in JPG, oppure immagine o cartella di immagini da mettere in PDF:",
+        deve_esistere=True, estensioni_file={".pdf"} | EST_IMMAGINI_PDF,
+        vuoto_corrente=True)
 
-    if origine.is_file():
+    if origine.is_file() and origine.suffix.lower() == ".pdf":
         destinazione = chiedi_cartella("Cartella dove salvare le pagine JPG:",
                                        deve_esistere=False,
                                        predefinita=origine.parent / origine.stem)
@@ -755,12 +762,13 @@ def menu_pdf() -> None:
             print("Annullato.")
         return
 
-    files = immagini_in_cartella(origine)
+    singola = origine.is_file()
+    files = [origine] if singola else immagini_in_cartella(origine)
     if not files:
         print("  Nella cartella non ci sono immagini da unire.")
         return
     cartella_pdf = chiedi_cartella("Cartella dove salvare il PDF:", deve_esistere=False,
-                                   predefinita=origine)
+                                   predefinita=pdf_predefinito(origine).parent)
     nome = chiedi_testo("Nome del PDF:", pdf_predefinito(origine).name)
     if not nome.lower().endswith(".pdf"):
         nome += ".pdf"
@@ -771,12 +779,17 @@ def menu_pdf() -> None:
     ], "a4")
 
     print("\nRiepilogo:")
-    print("  Operazione:    immagini -> un unico PDF")
-    print(f"  Cartella:      {origine}  ({len(files)} immagini)")
-    elenco = ", ".join(f.name for f in files[:3]) + (", ..." if len(files) > 3 else "")
-    print(f"  Ordine:        {elenco}  (per nome)")
+    if singola:
+        print("  Operazione:    immagine -> PDF di una pagina")
+        print(f"  Immagine:      {origine}")
+    else:
+        print("  Operazione:    immagini -> un unico PDF")
+        print(f"  Cartella:      {origine}  ({len(files)} immagini)")
+        elenco = ", ".join(f.name for f in files[:3]) + (", ..." if len(files) > 3 else "")
+        print(f"  Ordine:        {elenco}  (per nome)")
     print(f"  PDF:           {pdf}")
-    print(f"  Pagine:        {'A4' if pagina == 'a4' else 'grandi quanto le immagini'}")
+    grande = "grande quanto l'immagine" if singola else "grandi quanto le immagini"
+    print(f"  Pagine:        {'A4' if pagina == 'a4' else grande}")
     if pdf.exists():
         print("\n  ⚠  Esiste già un file con questo nome: verrà SOVRASCRITTO.")
     print()
@@ -1009,9 +1022,11 @@ def comando_orizzontale(args) -> int:
 
 
 def comando_pdf(args) -> int:
-    if args.origine.is_file():
+    singola = args.origine.is_file() and args.origine.suffix.lower() in EST_IMMAGINI_PDF
+    if args.origine.is_file() and not singola:
         if args.origine.suffix.lower() != ".pdf":
-            print("Errore: per lo strumento pdf indica un file PDF oppure una cartella di immagini.")
+            print("Errore: per lo strumento pdf indica un PDF, un'immagine "
+                  "oppure una cartella di immagini.")
             return 1
         if not 30 <= args.dpi <= 1200:
             print("Errore: --dpi deve essere tra 30 e 1200.")
@@ -1019,7 +1034,7 @@ def comando_pdf(args) -> int:
         cartella = args.destinazione or args.origine.parent / args.origine.stem
         return pdf_a_jpg(args.origine, cartella, args.dpi,
                          args.qualita if 1 <= args.qualita <= 100 else 90)
-    if not args.origine.is_dir():
+    if not (singola or args.origine.is_dir()):
         print(f"Errore: '{args.origine}' non esiste.")
         return 1
     if args.destinazione is None:
